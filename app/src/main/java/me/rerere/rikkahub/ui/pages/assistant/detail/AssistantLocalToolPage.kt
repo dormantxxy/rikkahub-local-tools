@@ -303,7 +303,7 @@ private fun AssistantLocalToolContent(
                 option = LocalToolOption.Cli,
                 icon = HugeIcons.Tools,
                 title = "CLI 工具 (git/python/node/ssh)",
-                description = "在运行环境 rootfs 里调用命令行工具，可做项目开发",
+                description = "在扩展包 / 完整 Linux 环境里调用命令行工具（git/python/node/ssh）",
             )
             toolItemStr(
                 option = LocalToolOption.WebFetch,
@@ -425,7 +425,7 @@ private fun AssistantLocalToolContent(
                 val installed = st?.installed == true
                 val installing = st?.installing == true
                 item(
-                    headlineContent = { Text("${spec.name}  ${spec.version}") },
+                    headlineContent = { Text(spec.name) },
                     supportingContent = {
                         Column {
                             Text(if (installing) (st?.message ?: "下载中...") else "${spec.desc} · ${spec.sizeMb}MB")

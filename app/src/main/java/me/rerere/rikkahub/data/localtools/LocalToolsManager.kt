@@ -286,20 +286,26 @@ class LocalToolsManager(
             _linuxEnv.value = LinuxEnvState(error = "需要 root 或 Shizuku 权限")
             return
         }
-        _linuxEnv.value = LinuxEnvState(installing = true, message = "准备下载...")
+        _linuxEnv.value = LinuxEnvState(installing = true, message = "下载中...")
         try {
             val archive = File(context.cacheDir, "alpine-${LinuxEnv.VERSION}.tar.gz")
+            archive.delete()
             var ok = false
+            var lastErr = ""
             for (url in LinuxEnv.MIRRORS) {
-                ok = runCatching {
-                    downloadTo(url, archive) { read, total ->
-                        _linuxEnv.update { it.copy(bytesRead = read, totalBytes = total, message = "下载中...") }
-                    }
-                }.getOrDefault(false)
-                if (ok && archive.length() > 100_000) break
+                _linuxEnv.update { it.copy(message = "下载中（${url.substringAfter("//").substringBefore("/")}）...") }
+                val r = shellExecutor.execute(
+                    "/system/bin/curl -fL --connect-timeout 20 --max-time 600 " +
+                        "-o ${archive.absolutePath.shellQuote()} ${url.shellQuote()} 2>&1; " +
+                        "chmod 644 ${archive.absolutePath.shellQuote()} 2>/dev/null; " +
+                        "wc -c < ${archive.absolutePath.shellQuote()} 2>/dev/null",
+                    timeoutMillis = 660_000, mode = mode,
+                )
+                if (archive.exists() && archive.length() > 100_000) { ok = true; break }
+                lastErr = r.output.take(200)
                 archive.delete()
             }
-            if (!ok) throw IllegalStateException("所有镜像下载失败")
+            if (!ok) throw IllegalStateException("下载失败：$lastErr")
             _linuxEnv.update { it.copy(message = "解压中...") }
             alpineDir.deleteRecursively()
             alpineDir.mkdirs()

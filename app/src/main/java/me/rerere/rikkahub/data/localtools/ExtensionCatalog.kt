@@ -29,7 +29,6 @@ val TOOL_EXTENSIONS: List<ToolExtension> = listOf(
 /** 扩展包下载源：GitHub Release + 国内镜像 */
 object ExtensionMirrors {
     private const val OWNER_REPO = "dormantxxy/RikkaHub"
-    private const val TAG = "tools-v1"
 
     /** 依次尝试：ghfast → ghproxy.net → 直连 */
     val MIRRORS = listOf(
@@ -38,10 +37,11 @@ object ExtensionMirrors {
         "https://github.com",
     )
 
-    fun assetName(spec: ToolExtension): String = "${spec.id}-${spec.version}.tar.gz"
+    /** 资产名不带版本，配合 releases/latest 自动取最新 */
+    fun assetName(spec: ToolExtension): String = "${spec.id}.tar.gz"
 
     fun url(spec: ToolExtension, mirror: String): String =
-        "$mirror/$OWNER_REPO/releases/download/$TAG/${assetName(spec)}"
+        "$mirror/$OWNER_REPO/releases/latest/download/${assetName(spec)}"
 }
 
 /** 完整 Linux 环境（Alpine + 内置 proot）：仅 3.9MB，不依赖工作区 */
