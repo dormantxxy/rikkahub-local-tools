@@ -3,6 +3,7 @@ package me.rerere.rikkahub.data.localtools
 import android.content.Context
 import android.util.Log
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +21,7 @@ import me.rerere.workspace.WorkspaceShellContext
 
 private const val TAG = "LocalToolsManager"
 
-/** 工具下载进度 */
+/** 工具下载进度（兼容旧 UI） */
 data class ToolDownloadProgress(
     val toolType: LocalToolType,
     val bytesRead: Long = 0,
@@ -30,12 +31,10 @@ data class ToolDownloadProgress(
 )
 
 /**
- * 本地 CLI 工具管理器。
+ * 本地 CLI 环境管理器：proot + Alpine rootfs。
  *
- * Android 上没有独立的 git/python/ssh 二进制可以直接跑，这里用 proot + Alpine rootfs：
- *  - 首次启用任一工具时，下载 Alpine minirootfs（真实镜像，可下载）
- *  - 再用 apk 安装对应包（git / openssh / python3）
- *  - 工具执行统一走 proot 环境
+ * 与 workspace 的 rootfs 安装体验一致：暴露 rootfsProgress / rootfsError，
+ * 安装完成后再按包安装工具（git / python3 / nodejs / ffmpeg ...）。
  */
 class LocalToolsManager(
     private val context: Context,
@@ -47,15 +46,38 @@ class LocalToolsManager(
         private const val ALPINE_URL =
             "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz"
         private const val ALPINE_MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/alpine"
+        /** rootfs 内通用环境（让 git/pip/npm 等正常工作） */
+        private const val BASE_ENV =
+            "export HOME=/root; export LANG=C.UTF-8; export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export GIT_TERMINAL_PROMPT=0;"
     }
 
     private val workspaceManager = WorkspaceManager(File(context.filesDir, "localtools_ws"))
     private val rootfsInstaller = RootfsInstaller(workspaceManager)
     private val prootRunner = ProotShellRunner(File(context.applicationInfo.nativeLibraryDir))
 
+    // ---- rootfs 状态（和 workspace 一致） ----
+    private val _rootfsProgress = MutableStateFlow<RootfsInstallProgress?>(null)
+    val rootfsProgress: StateFlow<RootfsInstallProgress?> = _rootfsProgress.asStateFlow()
+
+    private val _rootfsError = MutableStateFlow<String?>(null)
+    val rootfsError: StateFlow<String?> = _rootfsError.asStateFlow()
+
+    // ---- 包状态 ----
+    private val _packageStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val packageStates: StateFlow<Map<String, Boolean>> = _packageStates.asStateFlow()
+
+    private val _installingPackages = MutableStateFlow<Set<String>>(emptySet())
+    val installingPackages: StateFlow<Set<String>> = _installingPackages.asStateFlow()
+
+    private val _packageMessages = MutableStateFlow<Map<String, String>>(emptyMap())
+    val packageMessages: StateFlow<Map<String, String>> = _packageMessages.asStateFlow()
+
+    private val _packageError = MutableStateFlow<String?>(null)
+    val packageError: StateFlow<String?> = _packageError.asStateFlow()
+
+    // 旧 UI 兼容
     private val _toolsState = MutableStateFlow<Map<LocalToolType, LocalToolInfo>>(emptyMap())
     val toolsState: StateFlow<Map<LocalToolType, LocalToolInfo>> = _toolsState.asStateFlow()
-
     private val _downloadProgress = MutableStateFlow<Map<LocalToolType, ToolDownloadProgress>>(emptyMap())
     val downloadProgress: StateFlow<Map<LocalToolType, ToolDownloadProgress>> = _downloadProgress.asStateFlow()
 
@@ -64,22 +86,41 @@ class LocalToolsManager(
     fun isRootfsInstalled(): Boolean =
         WorkspaceManager.isUsableRootfs(workspaceManager.linuxDir(ROOTFS_ROOT))
 
-    private suspend fun ensureRootfs(onProgress: (RootfsInstallProgress) -> Unit) {
-        if (isRootfsInstalled()) return
-        workspaceManager.ensureWorkspace(ROOTFS_ROOT)
-        withContext(Dispatchers.IO) {
-            rootfsInstaller.install(ROOTFS_ROOT, ALPINE_URL) { p -> onProgress(p) }
+    /** 安装/重装 rootfs（与 workspace 相同的进度与错误模型） */
+    suspend fun installRootfs(force: Boolean = false) {
+        _rootfsError.value = null
+        _rootfsProgress.value = RootfsInstallProgress(stage = RootfsInstallStage.DOWNLOADING)
+        try {
+            workspaceManager.ensureWorkspace(ROOTFS_ROOT)
+            if (force && isRootfsInstalled()) {
+                workspaceManager.deleteWorkspace(ROOTFS_ROOT)
+                workspaceManager.ensureWorkspace(ROOTFS_ROOT)
+            }
+            withContext(Dispatchers.IO) {
+                rootfsInstaller.install(ROOTFS_ROOT, ALPINE_URL) { p -> _rootfsProgress.value = p }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "installRootfs failed", e)
+            _rootfsError.value = e.message ?: "Rootfs 安装失败"
+        } finally {
+            _rootfsProgress.value = null
+            refreshPackages()
         }
     }
+
+    fun dismissRootfsError() { _rootfsError.value = null }
+    fun dismissPackageError() { _packageError.value = null }
 
     /** 在 rootfs（proot）里执行命令 */
     suspend fun runInRootfs(command: String, timeoutMillis: Long = 180_000): ShellResult {
         if (!isRootfsInstalled()) {
-            return ShellResult(-1, "", "命令行环境(rootfs)未安装，请先在「本地工具」里下载")
+            return ShellResult(-1, "", "运行环境未安装，请先在「本地工具」里安装 rootfs")
         }
         val ctx = WorkspaceShellContext(
             root = ROOTFS_ROOT,
-            command = command,
+            command = "$BASE_ENV $command",
             cwd = "/root",
             filesDir = workspaceManager.filesDir(ROOTFS_ROOT),
             linuxDir = workspaceManager.linuxDir(ROOTFS_ROOT),
@@ -89,6 +130,7 @@ class LocalToolsManager(
             bindMounts = listOf(
                 WorkspaceBindMount(File("/storage"), "/storage", writable = true),
                 WorkspaceBindMount(File("/sdcard"), "/sdcard", writable = true),
+                WorkspaceBindMount(context.filesDir, "/appfiles", writable = true),
             ),
         )
         return withContext(Dispatchers.IO) {
@@ -98,37 +140,38 @@ class LocalToolsManager(
         }
     }
 
-    // ---------------- 工具状态 ----------------
+    // ---------------- 包 ----------------
 
-    suspend fun refreshTools() {
-        val config = settingsStore.settingsFlow.value.localToolsConfig
+    /** 刷新所有包的安装状态（一条命令批量检测） */
+    suspend fun refreshPackages() {
         if (!isRootfsInstalled()) {
+            _packageStates.value = ROOTFS_PACKAGES.associate { it.pkg to false }
             _toolsState.value = LocalToolType.entries.associateWith { t ->
-                LocalToolInfo(t, isEnabled(config, t), LocalToolStatus.NOT_INSTALLED)
+                LocalToolInfo(t, isEnabled(settingsStore.settingsFlow.value.localToolsConfig, t), LocalToolStatus.NOT_INSTALLED)
             }
             return
         }
-        // 一条命令批量检测，避免多次 proot 启动
+        val bins = ROOTFS_PACKAGES.joinToString(" ") { it.bin }
         val probe = runInRootfs(
-            "for b in git ssh python3; do if command -v \$b >/dev/null 2>&1; then echo \"\$b=\$(\$b --version 2>&1 | head -1)\"; fi; done",
-            timeoutMillis = 30_000,
+            "for b in $bins; do if command -v \$b >/dev/null 2>&1; then echo \"\$b=OK\"; fi; done",
+            timeoutMillis = 40_000,
         )
-        val found = mutableMapOf<String, String>()
-        probe.stdout.lineSequence().forEach { line ->
-            val idx = line.indexOf('=')
-            if (idx > 0) {
-                found[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
-            }
-        }
+        val found = probe.stdout.lineSequence()
+            .mapNotNull { line -> line.substringBefore('=').trim().takeIf { line.contains("=OK") } }
+            .toSet()
+        _packageStates.value = ROOTFS_PACKAGES.associate { it.pkg to found.contains(it.bin) }
+        // 同步旧 toolsState
         _toolsState.value = LocalToolType.entries.associateWith { t ->
-            val bin = binaryName(t)
-            val version = found[bin]
+            val pkg = when (t) {
+                LocalToolType.GIT -> "git"
+                LocalToolType.SSH -> "openssh-client"
+                LocalToolType.PYTHON -> "python3"
+            }
             LocalToolInfo(
                 type = t,
-                enabled = isEnabled(config, t),
-                status = if (version != null) LocalToolStatus.INSTALLED else LocalToolStatus.NOT_INSTALLED,
-                version = version ?: "",
-                executablePath = if (version != null) "/usr/bin/$bin" else null,
+                enabled = isEnabled(settingsStore.settingsFlow.value.localToolsConfig, t),
+                status = if (_packageStates.value[pkg] == true) LocalToolStatus.INSTALLED else LocalToolStatus.NOT_INSTALLED,
+                version = "",
             )
         }
     }
@@ -139,19 +182,57 @@ class LocalToolsManager(
         LocalToolType.PYTHON -> config.pythonEnabled
     }
 
-    private fun binaryName(type: LocalToolType): String = when (type) {
-        LocalToolType.GIT -> "git"
-        LocalToolType.SSH -> "ssh"
-        LocalToolType.PYTHON -> "python3"
+    /** 安装单个包（自动确保 rootfs 已安装） */
+    suspend fun installPackage(pkg: String) {
+        _packageError.value = null
+        _installingPackages.update { it + pkg }
+        _packageMessages.update { it + (pkg to "准备中...") }
+        try {
+            if (!isRootfsInstalled()) {
+                _packageMessages.update { it + (pkg to "先安装运行环境...") }
+                installRootfs()
+                if (!isRootfsInstalled()) {
+                    _packageError.value = "运行环境安装失败，请先在上方安装 rootfs"
+                    return
+                }
+            }
+            _packageMessages.update { it + (pkg to "安装 $pkg ...") }
+            val r = runInRootfs(
+                "sed -i 's|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|g' /etc/apk/repositories 2>/dev/null; " +
+                    "apk update >/dev/null 2>&1; apk add --no-cache $pkg 2>&1",
+                timeoutMillis = 1_800_000,
+            )
+            if (r.exitCode != 0) {
+                _packageError.value = "安装 $pkg 失败：${r.output.take(500)}"
+                _packageMessages.update { it + (pkg to "安装失败") }
+            } else {
+                _packageMessages.update { it + (pkg to "已安装") }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Log.e(TAG, "installPackage failed: $pkg", e)
+            _packageError.value = "安装 $pkg 失败：${e.message}"
+        } finally {
+            _installingPackages.update { it - pkg }
+            refreshPackages()
+        }
     }
 
-    private fun packageName(type: LocalToolType): String = when (type) {
-        LocalToolType.GIT -> "git"
-        LocalToolType.SSH -> "openssh-client"
-        LocalToolType.PYTHON -> "python3"
+    suspend fun removePackage(pkg: String) {
+        if (!isRootfsInstalled()) return
+        _installingPackages.update { it + pkg }
+        try {
+            runInRootfs("apk del $pkg 2>&1", timeoutMillis = 300_000)
+        } finally {
+            _installingPackages.update { it - pkg }
+            refreshPackages()
+        }
     }
 
-    // ---------------- 启停/安装 ----------------
+    // ---------------- 旧 API 兼容 ----------------
+
+    suspend fun refreshTools() = refreshPackages()
 
     suspend fun setToolEnabled(type: LocalToolType, enabled: Boolean) {
         settingsStore.update { s ->
@@ -164,69 +245,36 @@ class LocalToolsManager(
             )
         }
         if (enabled) {
-            val installed = _toolsState.value[type]?.status == LocalToolStatus.INSTALLED
-            if (!installed) installTool(type)
+            val pkg = when (type) {
+                LocalToolType.GIT -> "git"
+                LocalToolType.SSH -> "openssh-client"
+                LocalToolType.PYTHON -> "python3"
+            }
+            if (_packageStates.value[pkg] != true) installPackage(pkg)
         }
-        refreshTools()
+        refreshPackages()
     }
 
     suspend fun installTool(type: LocalToolType) {
-        _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "准备下载...")) }
-        try {
-            // 1) rootfs（若未安装）
-            if (!isRootfsInstalled()) {
-                ensureRootfs { p ->
-                    val msg = when (p.stage) {
-                        RootfsInstallStage.DOWNLOADING -> "下载系统环境..."
-                        RootfsInstallStage.EXTRACTING -> "解压系统环境..."
-                        RootfsInstallStage.INSTALLED -> "系统环境就绪"
-                    }
-                    _downloadProgress.update {
-                        it + (type to ToolDownloadProgress(type, p.bytesRead, p.totalBytes, msg))
-                    }
-                }
-            }
-            // 2) apk 安装包
-            _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "安装 ${packageName(type)}...")) }
-            val pkg = packageName(type)
-            val result = runInRootfs(
-                "sed -i 's|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|g' /etc/apk/repositories 2>/dev/null; " +
-                    "apk update >/dev/null 2>&1; apk add --no-cache $pkg 2>&1",
-                timeoutMillis = 900_000,
-            )
-            if (result.exitCode == 0) {
-                _downloadProgress.update {
-                    it + (type to ToolDownloadProgress(type, message = "安装完成", finished = true))
-                }
-            } else {
-                _downloadProgress.update {
-                    it + (type to ToolDownloadProgress(type, message = "安装失败: ${result.output.take(400)}"))
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "installTool failed: $type", e)
-            _downloadProgress.update {
-                it + (type to ToolDownloadProgress(type, message = "失败: ${e.message}"))
-            }
-        } finally {
-            refreshTools()
+        val pkg = when (type) {
+            LocalToolType.GIT -> "git"
+            LocalToolType.SSH -> "openssh-client"
+            LocalToolType.PYTHON -> "python3"
         }
+        installPackage(pkg)
     }
 
     suspend fun uninstallTool(type: LocalToolType) {
-        if (isRootfsInstalled()) {
-            runInRootfs("apk del ${packageName(type)} 2>&1", timeoutMillis = 180_000)
+        val pkg = when (type) {
+            LocalToolType.GIT -> "git"
+            LocalToolType.SSH -> "openssh-client"
+            LocalToolType.PYTHON -> "python3"
         }
+        removePackage(pkg)
         setToolEnabled(type, false)
-        refreshTools()
     }
 
-    // ---------------- 其他 ----------------
-
-    /** 设备 PATH 前缀（CLI 工具走 proot，这里保留给设备侧调用） */
     fun pathPrefix(): String = ""
-
     fun isShizukuAvailable(): Boolean = shellExecutor.isShizukuAvailable()
-
     fun isRootAvailable(): Boolean = shellExecutor.isRootAvailable()
 }
