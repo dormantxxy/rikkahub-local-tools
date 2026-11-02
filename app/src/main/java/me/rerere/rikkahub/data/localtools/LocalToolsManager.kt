@@ -3,8 +3,6 @@ package me.rerere.rikkahub.data.localtools
 import android.content.Context
 import android.util.Log
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -12,6 +10,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.workspace.ProotShellRunner
+import me.rerere.workspace.RootfsInstallProgress
+import me.rerere.workspace.RootfsInstallStage
+import me.rerere.workspace.RootfsInstaller
+import me.rerere.workspace.WorkspaceBindMount
+import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceShellContext
 
 private const val TAG = "LocalToolsManager"
 
@@ -24,193 +29,204 @@ data class ToolDownloadProgress(
     val finished: Boolean = false,
 )
 
-/** 本地工具管理器 */
+/**
+ * 本地 CLI 工具管理器。
+ *
+ * Android 上没有独立的 git/python/ssh 二进制可以直接跑，这里用 proot + Alpine rootfs：
+ *  - 首次启用任一工具时，下载 Alpine minirootfs（真实镜像，可下载）
+ *  - 再用 apk 安装对应包（git / openssh / python3）
+ *  - 工具执行统一走 proot 环境
+ */
 class LocalToolsManager(
     private val context: Context,
     private val settingsStore: SettingsStore,
     private val shellExecutor: ShellExecutor,
 ) {
+    companion object {
+        private const val ROOTFS_ROOT = "localtools"
+        private const val ALPINE_URL =
+            "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz"
+        private const val ALPINE_MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/alpine"
+    }
+
+    private val workspaceManager = WorkspaceManager(File(context.filesDir, "localtools_ws"))
+    private val rootfsInstaller = RootfsInstaller(workspaceManager)
+    private val prootRunner = ProotShellRunner(File(context.applicationInfo.nativeLibraryDir))
+
     private val _toolsState = MutableStateFlow<Map<LocalToolType, LocalToolInfo>>(emptyMap())
     val toolsState: StateFlow<Map<LocalToolType, LocalToolInfo>> = _toolsState.asStateFlow()
 
     private val _downloadProgress = MutableStateFlow<Map<LocalToolType, ToolDownloadProgress>>(emptyMap())
     val downloadProgress: StateFlow<Map<LocalToolType, ToolDownloadProgress>> = _downloadProgress.asStateFlow()
 
-    /** 工具根目录 */
-    private val toolsRootDir: File
-        get() = File(context.filesDir, "localtools")
+    // ---------------- rootfs ----------------
 
-    /** 刷新所有工具状态 */
+    fun isRootfsInstalled(): Boolean =
+        WorkspaceManager.isUsableRootfs(workspaceManager.linuxDir(ROOTFS_ROOT))
+
+    private suspend fun ensureRootfs(onProgress: (RootfsInstallProgress) -> Unit) {
+        if (isRootfsInstalled()) return
+        workspaceManager.ensureWorkspace(ROOTFS_ROOT)
+        withContext(Dispatchers.IO) {
+            rootfsInstaller.install(ROOTFS_ROOT, ALPINE_URL) { p -> onProgress(p) }
+        }
+    }
+
+    /** 在 rootfs（proot）里执行命令 */
+    suspend fun runInRootfs(command: String, timeoutMillis: Long = 180_000): ShellResult {
+        if (!isRootfsInstalled()) {
+            return ShellResult(-1, "", "命令行环境(rootfs)未安装，请先在「本地工具」里下载")
+        }
+        val ctx = WorkspaceShellContext(
+            root = ROOTFS_ROOT,
+            command = command,
+            cwd = "/root",
+            filesDir = workspaceManager.filesDir(ROOTFS_ROOT),
+            linuxDir = workspaceManager.linuxDir(ROOTFS_ROOT),
+            tempDir = workspaceManager.tempDir(ROOTFS_ROOT),
+            workingDir = workspaceManager.filesDir(ROOTFS_ROOT),
+            timeoutMillis = timeoutMillis,
+            bindMounts = listOf(
+                WorkspaceBindMount(File("/storage"), "/storage", writable = true),
+                WorkspaceBindMount(File("/sdcard"), "/sdcard", writable = true),
+            ),
+        )
+        return withContext(Dispatchers.IO) {
+            runCatching { prootRunner.execute(ctx) }
+                .map { ShellResult(it.exitCode, it.stdout, it.stderr, it.timedOut) }
+                .getOrElse { ShellResult(-1, "", it.message ?: "proot 执行失败") }
+        }
+    }
+
+    // ---------------- 工具状态 ----------------
+
     suspend fun refreshTools() {
         val config = settingsStore.settingsFlow.value.localToolsConfig
-        val infos = mutableMapOf<LocalToolType, LocalToolInfo>()
-        for (type in LocalToolType.entries) {
-            infos[type] = queryToolStatus(type, config)
+        if (!isRootfsInstalled()) {
+            _toolsState.value = LocalToolType.entries.associateWith { t ->
+                LocalToolInfo(t, isEnabled(config, t), LocalToolStatus.NOT_INSTALLED)
+            }
+            return
         }
-        _toolsState.value = infos
-    }
-
-    /** 查询单个工具状态 */
-    private suspend fun queryToolStatus(
-        type: LocalToolType,
-        config: LocalToolsConfig,
-    ): LocalToolInfo {
-        val enabled = when (type) {
-            LocalToolType.GIT -> config.gitEnabled
-            LocalToolType.SSH -> config.sshEnabled
-            LocalToolType.PYTHON -> config.pythonEnabled
+        // 一条命令批量检测，避免多次 proot 启动
+        val probe = runInRootfs(
+            "for b in git ssh python3; do if command -v \$b >/dev/null 2>&1; then echo \"\$b=\$(\$b --version 2>&1 | head -1)\"; fi; done",
+            timeoutMillis = 30_000,
+        )
+        val found = mutableMapOf<String, String>()
+        probe.stdout.lineSequence().forEach { line ->
+            val idx = line.indexOf('=')
+            if (idx > 0) {
+                found[line.substring(0, idx).trim()] = line.substring(idx + 1).trim()
+            }
         }
-        val execFile = toolExecutable(type)
-        val exists = execFile?.exists() == true
-        return if (exists) {
-            val version = queryVersion(type)
-            LocalToolInfo(type, enabled, LocalToolStatus.INSTALLED, version, execFile?.absolutePath)
-        } else {
-            LocalToolInfo(type, enabled, LocalToolStatus.NOT_INSTALLED)
+        _toolsState.value = LocalToolType.entries.associateWith { t ->
+            val bin = binaryName(t)
+            val version = found[bin]
+            LocalToolInfo(
+                type = t,
+                enabled = isEnabled(config, t),
+                status = if (version != null) LocalToolStatus.INSTALLED else LocalToolStatus.NOT_INSTALLED,
+                version = version ?: "",
+                executablePath = if (version != null) "/usr/bin/$bin" else null,
+            )
         }
     }
 
-    /** 工具可执行文件 */
-    private fun toolExecutable(type: LocalToolType): File? = when (type) {
-        LocalToolType.GIT -> File(toolsRootDir, "git/bin/git").takeIf { it.exists() }
-            ?: File(toolsRootDir, "git/usr/bin/git").takeIf { it.exists() }
-            ?: File(toolsRootDir, "bin/git").takeIf { it.exists() }
-        LocalToolType.SSH -> File(toolsRootDir, "ssh/usr/bin/ssh").takeIf { it.exists() }
-            ?: File(toolsRootDir, "ssh/bin/ssh").takeIf { it.exists() }
-            ?: File(toolsRootDir, "bin/ssh").takeIf { it.exists() }
-        LocalToolType.PYTHON -> File(toolsRootDir, "python/bin/python3").takeIf { it.exists() }
-            ?: File(toolsRootDir, "python/usr/bin/python3").takeIf { it.exists() }
-            ?: File(toolsRootDir, "bin/python3").takeIf { it.exists() }
+    private fun isEnabled(config: LocalToolsConfig, type: LocalToolType): Boolean = when (type) {
+        LocalToolType.GIT -> config.gitEnabled
+        LocalToolType.SSH -> config.sshEnabled
+        LocalToolType.PYTHON -> config.pythonEnabled
     }
 
-    /** 查询版本 */
-    private suspend fun queryVersion(type: LocalToolType): String {
-        val exec = toolExecutable(type) ?: return ""
-        val result = shellExecutor.execute("\"${exec.absolutePath}\" --version 2>&1 | head -1")
-        return result.stdout.trim().ifEmpty { result.stderr.trim() }
+    private fun binaryName(type: LocalToolType): String = when (type) {
+        LocalToolType.GIT -> "git"
+        LocalToolType.SSH -> "ssh"
+        LocalToolType.PYTHON -> "python3"
     }
 
-    /**
-     * 启用/停用工具
-     *
-     * 启用时若未安装则自动下载安装；停用时仅改配置。
-     */
+    private fun packageName(type: LocalToolType): String = when (type) {
+        LocalToolType.GIT -> "git"
+        LocalToolType.SSH -> "openssh-client"
+        LocalToolType.PYTHON -> "python3"
+    }
+
+    // ---------------- 启停/安装 ----------------
+
     suspend fun setToolEnabled(type: LocalToolType, enabled: Boolean) {
-        settingsStore.update { it ->
-            it.copy(
-                localToolsConfig = it.localToolsConfig.copy(
-                    gitEnabled = if (type == LocalToolType.GIT) enabled else it.localToolsConfig.gitEnabled,
-                    sshEnabled = if (type == LocalToolType.SSH) enabled else it.localToolsConfig.sshEnabled,
-                    pythonEnabled = if (type == LocalToolType.PYTHON) enabled else it.localToolsConfig.pythonEnabled,
+        settingsStore.update { s ->
+            s.copy(
+                localToolsConfig = s.localToolsConfig.copy(
+                    gitEnabled = if (type == LocalToolType.GIT) enabled else s.localToolsConfig.gitEnabled,
+                    sshEnabled = if (type == LocalToolType.SSH) enabled else s.localToolsConfig.sshEnabled,
+                    pythonEnabled = if (type == LocalToolType.PYTHON) enabled else s.localToolsConfig.pythonEnabled,
                 )
             )
         }
         if (enabled) {
-            // 若未安装则下载
-            val status = queryToolStatus(type, settingsStore.settingsFlow.value.localToolsConfig)
-            if (status.status == LocalToolStatus.NOT_INSTALLED) {
-                installTool(type)
-            }
+            val installed = _toolsState.value[type]?.status == LocalToolStatus.INSTALLED
+            if (!installed) installTool(type)
         }
         refreshTools()
     }
 
-    /** 安装指定工具 */
     suspend fun installTool(type: LocalToolType) {
-        _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "开始下载...")) }
+        _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "准备下载...")) }
         try {
-            val url = when (type) {
-                LocalToolType.GIT -> LocalToolMirrors.GIT_DOWNLOAD_URL
-                LocalToolType.SSH -> LocalToolMirrors.SSH_DOWNLOAD_URL
-                LocalToolType.PYTHON -> LocalToolMirrors.PYTHON_DOWNLOAD_URL
+            // 1) rootfs（若未安装）
+            if (!isRootfsInstalled()) {
+                ensureRootfs { p ->
+                    val msg = when (p.stage) {
+                        RootfsInstallStage.DOWNLOADING -> "下载系统环境..."
+                        RootfsInstallStage.EXTRACTING -> "解压系统环境..."
+                        RootfsInstallStage.INSTALLED -> "系统环境就绪"
+                    }
+                    _downloadProgress.update {
+                        it + (type to ToolDownloadProgress(type, p.bytesRead, p.totalBytes, msg))
+                    }
+                }
             }
-            val archive = downloadTool(type, url)
-            if (archive == null) {
-                _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "下载失败")) }
-                return
+            // 2) apk 安装包
+            _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "安装 ${packageName(type)}...")) }
+            val pkg = packageName(type)
+            val result = runInRootfs(
+                "sed -i 's|https://dl-cdn.alpinelinux.org/alpine|$ALPINE_MIRROR|g' /etc/apk/repositories 2>/dev/null; " +
+                    "apk update >/dev/null 2>&1; apk add --no-cache $pkg 2>&1",
+                timeoutMillis = 900_000,
+            )
+            if (result.exitCode == 0) {
+                _downloadProgress.update {
+                    it + (type to ToolDownloadProgress(type, message = "安装完成", finished = true))
+                }
+            } else {
+                _downloadProgress.update {
+                    it + (type to ToolDownloadProgress(type, message = "安装失败: ${result.output.take(400)}"))
+                }
             }
-            extractTool(type, archive)
-            archive.delete()
-            _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "安装完成", finished = true)) }
         } catch (e: Exception) {
-            Log.e(TAG, "安装工具失败: $type", e)
-            _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "安装失败: ${e.message}")) }
+            Log.e(TAG, "installTool failed: $type", e)
+            _downloadProgress.update {
+                it + (type to ToolDownloadProgress(type, message = "失败: ${e.message}"))
+            }
         } finally {
             refreshTools()
         }
     }
 
-    /** 下载工具 */
-    private suspend fun downloadTool(
-        type: LocalToolType,
-        url: String,
-    ): File? = withContext(Dispatchers.IO) {
-        runCatching {
-            toolsRootDir.mkdirs()
-            val archive = File(toolsRootDir, "${type.name.lowercase()}.tar.gz")
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.connectTimeout = 30_000
-            connection.readTimeout = 60_000
-            connection.instanceFollowRedirects = true
-            val code = connection.responseCode
-            if (code !in 200..299) {
-                _downloadProgress.update { it + (type to ToolDownloadProgress(type, message = "HTTP $code")) }
-                return@runCatching null
-            }
-            val total = connection.contentLengthLong.takeIf { it > 0 }
-            connection.inputStream.use { input ->
-                archive.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    var read = 0L
-                    while (true) {
-                        val n = input.read(buffer)
-                        if (n < 0) break
-                        output.write(buffer, 0, n)
-                        read += n
-                        _downloadProgress.update { it + (type to ToolDownloadProgress(type, read, total, "下载中...")) }
-                    }
-                }
-            }
-            archive
-        }.getOrElse {
-            Log.e(TAG, "下载失败: $type", it)
-            null
-        }
-    }
-
-    /** 解压 tar.gz */
-    private suspend fun extractTool(type: LocalToolType, archive: File) {
-        val targetDir = File(toolsRootDir, type.name.lowercase())
-        // 清理旧目录
-        targetDir.deleteRecursively()
-        targetDir.mkdirs()
-
-        val result = shellExecutor.execute(
-            "tar -xzf ${archive.absolutePath.shellQuote()} -C ${targetDir.absolutePath.shellQuote()} 2>&1",
-            timeoutMillis = 300_000,
-        )
-        if (!result.isSuccess) {
-            throw IllegalStateException("解压失败: ${result.output.take(200)}")
-        }
-
-        // 设置可执行权限
-        shellExecutor.execute("chmod -R 755 ${targetDir.absolutePath.shellQuote()}")
-    }
-
-    /** 卸载工具 */
     suspend fun uninstallTool(type: LocalToolType) {
-        val targetDir = File(toolsRootDir, type.name.lowercase())
-        targetDir.deleteRecursively()
+        if (isRootfsInstalled()) {
+            runInRootfs("apk del ${packageName(type)} 2>&1", timeoutMillis = 180_000)
+        }
         setToolEnabled(type, false)
         refreshTools()
     }
 
-    /** 获取工具安装目录 */
-    fun toolInstallDir(type: LocalToolType): File = File(toolsRootDir, type.name.lowercase())
+    // ---------------- 其他 ----------------
 
-    /** 检测 shizuku 可用 */
+    /** 设备 PATH 前缀（CLI 工具走 proot，这里保留给设备侧调用） */
+    fun pathPrefix(): String = ""
+
     fun isShizukuAvailable(): Boolean = shellExecutor.isShizukuAvailable()
 
-    /** 检测 root 可用 */
     fun isRootAvailable(): Boolean = shellExecutor.isRootAvailable()
 }

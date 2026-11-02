@@ -4,6 +4,8 @@ import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.localtools.LocalToolsManager
+import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -11,6 +13,8 @@ class LocalTools(
     private val eventBus: AppEventBus,
     private val ttsManager: TTSManager,
     private val settingsStore: SettingsStore,
+    private val shellExecutor: ShellExecutor,
+    private val toolsManager: LocalToolsManager,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
 
@@ -29,6 +33,14 @@ class LocalTools(
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
 
     val chartDisplayTool by lazy { buildChartDisplayTool() }
+
+    val runShellTool by lazy { buildRunShellTool(shellExecutor) }
+
+    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor) }
+
+    val runCliTool by lazy { buildRunCliTool(shellExecutor, toolsManager) }
+
+    val webFetchTool by lazy { buildWebFetchTool() }
 
     fun getTools(options: List<LocalToolOption>): List<Tool> {
         val tools = mutableListOf<Tool>()
@@ -56,6 +68,18 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.ChartDisplay)) {
             tools.add(chartDisplayTool)
+        }
+        if (options.contains(LocalToolOption.Shell)) {
+            tools.add(runShellTool)
+        }
+        if (options.contains(LocalToolOption.Files)) {
+            tools.add(manageFilesTool)
+        }
+        if (options.contains(LocalToolOption.Cli)) {
+            tools.add(runCliTool)
+        }
+        if (options.contains(LocalToolOption.WebFetch)) {
+            tools.add(webFetchTool)
         }
         return tools
     }

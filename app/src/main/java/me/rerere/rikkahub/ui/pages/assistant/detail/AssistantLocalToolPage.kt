@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -17,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -24,6 +27,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import me.rerere.rikkahub.data.localtools.LocalToolStatus
+import me.rerere.rikkahub.data.localtools.LocalToolType
+import me.rerere.rikkahub.data.localtools.LocalToolsManager
+import me.rerere.hugeicons.stroke.ComputerTerminal01
+import me.rerere.hugeicons.stroke.FolderOpen
+import me.rerere.hugeicons.stroke.Earth
+import me.rerere.hugeicons.stroke.Download01
+import kotlinx.coroutines.launch
+import org.koin.compose.koinInject
 import me.rerere.ui.toast.ToastType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Calendar03
@@ -94,6 +109,10 @@ private fun AssistantLocalToolContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val toolsManager: LocalToolsManager = koinInject()
+    val toolsState by toolsManager.toolsState.collectAsStateWithLifecycle()
+    val downloadState by toolsManager.downloadProgress.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
 
@@ -163,6 +182,36 @@ private fun AssistantLocalToolContent(
         )
     }
 
+    fun CardGroupScope.toolItemStr(
+        option: LocalToolOption,
+        icon: ImageVector,
+        title: String,
+        description: String,
+    ) {
+        val checked = assistant.localTools.contains(option)
+        switchItem(
+            checked = checked,
+            onCheckedChange = { toggleLocalTool(option, it) },
+            leadingContent = {
+                CardGroupIcon(
+                    icon = icon,
+                    containerColor = if (checked) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    contentColor = if (checked) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            },
+            supportingContent = { Text(description) },
+            headlineContent = { Text(title) },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -222,6 +271,92 @@ private fun AssistantLocalToolContent(
                 title = R.string.assistant_page_local_tools_chart_display_title,
                 description = R.string.assistant_page_local_tools_chart_display_desc,
             )
+            toolItemStr(
+                option = LocalToolOption.Shell,
+                icon = HugeIcons.ComputerTerminal01,
+                title = "设备 Shell",
+                description = "执行任意 shell 命令，权限自动 root > shizuku > 普通",
+            )
+            toolItemStr(
+                option = LocalToolOption.Files,
+                icon = HugeIcons.FolderOpen,
+                title = "文件管理",
+                description = "浏览/读写/复制/移动/删除/搜索文件，支持 root/shizuku/普通",
+            )
+            toolItemStr(
+                option = LocalToolOption.Cli,
+                icon = HugeIcons.Tools,
+                title = "CLI 工具 (git/python/ssh)",
+                description = "调用已下载安装的命令行工具",
+            )
+            toolItemStr(
+                option = LocalToolOption.WebFetch,
+                icon = HugeIcons.Earth,
+                title = "网页浏览",
+                description = "抓取网页/接口并返回可读文本，无需前台渲染",
+            )
         }
+
+        CardGroup(title = { Text("CLI 工具下载") }) {
+            for (type in LocalToolType.entries) {
+                val info = toolsState[type]
+                val dp = downloadState[type]
+                val status = info?.status ?: LocalToolStatus.NOT_INSTALLED
+                val installing = status == LocalToolStatus.INSTALLING || (dp != null && !dp.finished && dp.bytesRead > 0L && dp.message.contains("下载"))
+                item(
+                    headlineContent = { Text(localToolName(type)) },
+                    supportingContent = {
+                        if (installing && dp != null) {
+                            Text(dp.message.ifBlank { "下载中..." })
+                        } else {
+                            Text(localToolStatusText(info))
+                        }
+                    },
+                    trailingContent = {
+                        if (installing) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        } else {
+                            androidx.compose.material3.FilledTonalButton(
+                                onClick = { scope.launch { toolsManager.installTool(type) } },
+                            ) {
+                                Icon(HugeIcons.Download01, contentDescription = null)
+                                Text("下载")
+                            }
+                        }
+                    },
+                )
+                if (installing && dp != null) {
+                    formItem {
+                        val total = dp.totalBytes
+                        if (total != null && total > 0) {
+                            LinearProgressIndicator(
+                                progress = { (dp.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Text("${dp.bytesRead / 1024 / 1024}MB / ${total / 1024 / 1024}MB")
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            Text("已下载 ${dp.bytesRead / 1024 / 1024}MB")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun localToolName(type: LocalToolType): String = when (type) {
+    LocalToolType.GIT -> "Git"
+    LocalToolType.SSH -> "OpenSSH"
+    LocalToolType.PYTHON -> "Python"
+}
+
+private fun localToolStatusText(info: me.rerere.rikkahub.data.localtools.LocalToolInfo?): String {
+    if (info == null) return "未安装"
+    return when (info.status) {
+        LocalToolStatus.INSTALLED -> "已安装 ${info.version}"
+        LocalToolStatus.INSTALLING -> "安装中..."
+        LocalToolStatus.NOT_INSTALLED -> "未安装"
+        LocalToolStatus.ERROR -> "错误: ${info.error ?: ""}"
     }
 }

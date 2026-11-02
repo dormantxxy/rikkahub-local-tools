@@ -261,12 +261,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_page_web_server_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_web_server)) },
                     )
-                    item(
-                        onClick = { navController.navigate(Screen.LocalTools) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("管理 git/ssh/python 工具，支持 root 与 shizuku") },
-                        headlineContent = { Text("本地工具") },
-                    )
                 }
             }
 

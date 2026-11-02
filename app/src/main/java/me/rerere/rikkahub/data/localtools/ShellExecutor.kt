@@ -48,6 +48,16 @@ enum class ShellMode {
 class ShellExecutor(
     private val context: Context,
 ) {
+    /**
+     * 首选执行模式：有 root 默认用 root，其次 shizuku，最后普通权限。
+     * 用户要求：root-shizuku-普通 顺序。
+     */
+    fun preferredMode(): ShellMode = when {
+        isRootAvailable() -> ShellMode.ROOT
+        isShizukuAvailable() -> ShellMode.SHIZUKU
+        else -> ShellMode.NORMAL
+    }
+
     /** 检测 shizuku 是否可用（通过反射，避免硬依赖） */
     fun isShizukuAvailable(): Boolean {
         return runCatching {

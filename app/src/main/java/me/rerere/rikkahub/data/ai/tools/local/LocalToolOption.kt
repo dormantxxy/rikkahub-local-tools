@@ -36,4 +36,20 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("chart_display")
     data object ChartDisplay : LocalToolOption()
+
+    @Serializable
+    @SerialName("shell")
+    data object Shell : LocalToolOption()
+
+    @Serializable
+    @SerialName("files")
+    data object Files : LocalToolOption()
+
+    @Serializable
+    @SerialName("cli")
+    data object Cli : LocalToolOption()
+
+    @Serializable
+    @SerialName("web_fetch")
+    data object WebFetch : LocalToolOption()
 }
