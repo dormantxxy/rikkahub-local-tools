@@ -323,50 +323,6 @@ private fun AssistantLocalToolContent(
                 title = "文件树",
                 description = "列出项目目录结构，便于 AI 快速定位文件",
             )
-        }
-
-        // ===== 权限提示 =====
-        if (!hasPriv) {
-            CardGroup(title = { Text("权限不足") }) {
-                item(
-                    headlineContent = { Text("需要 root 或 Shizuku") },
-                    supportingContent = { Text("已移除普通权限模式。CLI 工具（Shell/文件/CLI）需要 root 或 Shizuku 才能运行，请先授权。") },
-                    trailingContent = {
-                        TextButton(onClick = { scope.launch { hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable() } }) {
-                            Text("重新检测")
-                        }
-                    },
-                )
-            }
-        }
-
-        // ===== 完整 Linux 环境（Alpine + 内置 proot） =====
-        CardGroup(title = { Text("完整 Linux 环境（Alpine + proot，3.9MB）") }) {
-            item(
-                headlineContent = { Text(if (linuxEnv.installed) "已安装" else "未安装") },
-                supportingContent = {
-                    Text(
-                        if (linuxEnv.installed) "可 apk 安装任意包（gcc/make/nodejs/ffmpeg…），CLI 优先走此环境"
-                        else "仅需下载 3.9MB（proot 已内置于 APK），装好后可安装任意软件包"
-                    )
-                },
-                trailingContent = {
-                    when {
-                        !hasPriv -> Text("不可用", color = MaterialTheme.colorScheme.error)
-                        linuxEnv.installing -> CircularProgressIndicator(modifier = Modifier.size(22.dp))
-                        linuxEnv.installed -> TextButton(onClick = { scope.launch { toolsManager.removeLinuxEnv() } }) { Text("卸载") }
-                        else -> FilledTonalButton(onClick = { scope.launch { toolsManager.installLinuxEnv() } }) { Text("安装") }
-                    }
-                },
-            )
-            if (linuxEnv.installing) {
-                formItem {
-                    Column {
-                        val total = linuxEnv.totalBytes
-                        if (total != null && total > 0) {
-                            LinearProgressIndicator(
-                                progress = { (linuxEnv.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
-                                modifier = Modifier.fillMaxWidth(),
                             )
                         } else {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())

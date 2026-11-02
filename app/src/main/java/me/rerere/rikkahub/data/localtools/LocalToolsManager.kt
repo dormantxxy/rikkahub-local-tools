@@ -439,5 +439,8 @@ class LocalToolsManager(
     }
 
     fun isShizukuAvailable(): Boolean = shellExecutor.isShizukuAvailable()
+
+    /** 是否有执行权限（root 或 shizuku） */
+    fun hasPrivilege(): Boolean = shellExecutor.hasPrivilege()
     fun isRootAvailable(): Boolean = shellExecutor.isRootAvailable()
 }
