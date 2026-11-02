@@ -132,7 +132,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
-import me.rerere.rikkahub.ui.pages.setting.LocalToolsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAutomationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
@@ -544,9 +543,6 @@ class RouteActivity : ComponentActivity() {
                                 SettingWebPage()
                             }
 
-                            entry<Screen.LocalTools> {
-                                LocalToolsPage()
-                            }
 
                             entry<Screen.Debug> {
                                 DebugPage()
@@ -798,8 +794,6 @@ sealed interface Screen : NavKey {
     @Serializable
     data object SettingWeb : Screen
 
-    @Serializable
-    data object LocalTools : Screen
 
     @Serializable
     data object Debug : Screen

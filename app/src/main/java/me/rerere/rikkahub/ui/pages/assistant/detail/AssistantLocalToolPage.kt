@@ -59,7 +59,6 @@ import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.localtools.LINUX_PACKAGES
-import me.rerere.rikkahub.data.localtools.TOOL_EXTENSIONS
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -121,7 +120,6 @@ private fun AssistantLocalToolContent(
     val toolsManager: LocalToolsManager = koinInject()
     val scope = rememberCoroutineScope()
 
-    val extStates by toolsManager.extensionStates.collectAsStateWithLifecycle()
     val linuxEnv by toolsManager.linuxEnv.collectAsStateWithLifecycle()
     val linuxPkgs by toolsManager.linuxPackages.collectAsStateWithLifecycle()
     val installingLinuxPkg by toolsManager.installingLinuxPkg.collectAsStateWithLifecycle()
@@ -381,7 +379,7 @@ private fun AssistantLocalToolContent(
             linuxEnv.error?.let { err ->
                 item(
                     headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
-                    trailingContent = { TextButton(onClick = { toolsManager.dismissLinuxErrors() }) { Text("关闭") } },
+                    trailingContent = { TextButton(onClick = { toolsManager.dismissErrors() }) { Text("关闭") } },
                 )
             }
         }
@@ -408,58 +406,11 @@ private fun AssistantLocalToolContent(
                 linuxPkgError?.let { err ->
                     item(
                         headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
-                        trailingContent = { TextButton(onClick = { toolsManager.dismissLinuxErrors() }) { Text("关闭") } },
+                        trailingContent = { TextButton(onClick = { toolsManager.dismissErrors() }) { Text("关闭") } },
                     )
                 }
             }
         }
 
-        // ===== 工具扩展（在线下载） =====
-        CardGroup(title = { Text("工具扩展（在线下载）") }) {
-            item(
-                headlineContent = { Text("点「安装」后从镜像站在线下载，APK 内不内置任何工具") },
-                supportingContent = { Text("下载源：GitHub Release（ghfast/ghproxy 镜像自动回退）") },
-            )
-            for (spec in TOOL_EXTENSIONS) {
-                val st = extStates[spec.id]
-                val installed = st?.installed == true
-                val installing = st?.installing == true
-                item(
-                    headlineContent = { Text(spec.name) },
-                    supportingContent = {
-                        Column {
-                            Text(if (installing) (st?.message ?: "下载中...") else "${spec.desc} · ${spec.sizeMb}MB")
-                            if (installing) {
-                                val total = st?.totalBytes
-                                if (total != null && total > 0) {
-                                    LinearProgressIndicator(
-                                        progress = { (st.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                } else {
-                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                }
-                                Text(
-                                    "${st.bytesRead / 1024 / 1024}MB" + (st.totalBytes?.let { " / ${it / 1024 / 1024}MB" } ?: ""),
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                            st?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                        }
-                    },
-                    trailingContent = {
-                        when {
-                            installing -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                            installed -> TextButton(
-                                onClick = { scope.launch { toolsManager.removeExtension(spec) } },
-                            ) { Text("卸载") }
-                            else -> FilledTonalButton(
-                                onClick = { scope.launch { toolsManager.installExtension(spec) } },
-                            ) { Text("安装") }
-                        }
-                    },
-                )
-            }
-        }
     }
 }

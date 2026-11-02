@@ -20,7 +20,6 @@ import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationSessionsVM
 import me.rerere.rikkahub.ui.pages.mediacreation.MediaCreationVM
 import me.rerere.rikkahub.ui.pages.memory.MemoryFileVM
 import me.rerere.rikkahub.ui.pages.search.SearchVM
-import me.rerere.rikkahub.ui.pages.setting.LocalToolsVM
 import me.rerere.rikkahub.ui.pages.setting.SettingVM
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerVM
 import me.rerere.rikkahub.ui.pages.stats.StatsVM
@@ -43,13 +42,6 @@ val viewModelModule = module {
     }
     viewModelOf(::ChatDrawerVM)
     viewModelOf(::SettingVM)
-    viewModel<LocalToolsVM> {
-        LocalToolsVM(
-            context = get(),
-            toolsManager = get(),
-            shellExecutor = get(),
-        )
-    }
     viewModelOf(::DebugVM)
     viewModelOf(::HistoryVM)
     viewModelOf(::AssistantVM)
