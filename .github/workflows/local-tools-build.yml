@@ -52,8 +52,8 @@ jobs:
           fi
           echo "sdkmanager=$SDKMGR"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-          "$SDKMGR" "platforms;android-37" "build-tools;37.0.0" "platform-tools" || \
-          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          "$SDKMGR" "platforms;android-37" "build-tools;37.0.0" "platform-tools" "ndk;28.2.13676358" || \
+          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;28.2.13676358"
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Generate placeholder google-services.json
