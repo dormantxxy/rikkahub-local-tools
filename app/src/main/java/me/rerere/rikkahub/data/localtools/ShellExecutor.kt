@@ -71,15 +71,21 @@ class ShellExecutor(
         }.getOrDefault(false)
     }
 
-    /** 检测 root 是否可用 */
+    /** 检测 root 是否可用（走 sh -c su，兼容 Magisk 授权弹窗） */
     fun isRootAvailable(): Boolean {
         return runCatching {
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "id"))
-            process.outputStream.close()
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            val line = reader.readLine()
-            process.waitFor(3, TimeUnit.SECONDS)
-            line?.contains("uid=0") == true
+            val p = ProcessBuilder("/system/bin/sh", "-c", "su -c id 2>/dev/null")
+                .redirectErrorStream(true)
+                .start()
+            p.outputStream.close()
+            val out = p.inputStream.bufferedReader().readText()
+            val finished = p.waitFor(8, TimeUnit.SECONDS)
+            if (!finished) {
+                p.destroyForcibly()
+                false
+            } else {
+                out.contains("uid=0")
+            }
         }.getOrDefault(false)
     }
 

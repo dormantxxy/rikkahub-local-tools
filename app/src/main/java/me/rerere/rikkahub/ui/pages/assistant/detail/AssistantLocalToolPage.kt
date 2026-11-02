@@ -324,7 +324,7 @@ private fun AssistantLocalToolContent(
             CardGroup(title = { Text("权限不足") }) {
                 item(
                     headlineContent = { Text("需要 root 或 Shizuku") },
-                    supportingContent = { Text("已移除普通权限模式。CLI 工具（Shell/文件/CLI/代码检索）需要 root 或 Shizuku 才能运行。") },
+                    supportingContent = { Text("仅「设备 Shell」「文件管理」需要 root 或 Shizuku。CLI 与扩展商店（内置 Linux 环境）不需要权限，可直接用。") },
                     trailingContent = {
                         TextButton(onClick = { scope.launch { hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable() } }) {
                             Text("重新检测")

@@ -51,13 +51,13 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        // 只支持 root / Shizuku：无权限时这些 CLI 类工具不注册，避免 AI 调用报错
+        // 设备 Shell / 文件管理需要 root 或 Shizuku；CLI / 检索走内置 proot，不需要权限
         val privileged = shellExecutor.hasPrivilege()
         if (privileged && options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
         if (privileged && options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
-        if (privileged && options.contains(LocalToolOption.Cli)) tools.add(runCliTool())
-        if (privileged && options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
-        if (privileged && options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
+        if (options.contains(LocalToolOption.Cli)) tools.add(runCliTool())
+        if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
+        if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
         return tools.map { it.logged() }
     }

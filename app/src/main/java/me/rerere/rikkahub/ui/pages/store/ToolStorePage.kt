@@ -127,7 +127,6 @@ fun ToolStorePage() {
                         },
                         trailingContent = {
                             when {
-                                !hasPriv -> Text("需要 root/Shizuku", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                                 env.installing -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                 env.installed -> TextButton(onClick = { scope.launch { mgr.removeLinuxEnv() } }) { Text("卸载") }
                                 else -> FilledTonalButton(onClick = { scope.launch { mgr.installLinuxEnv() } }) { Text("安装") }
@@ -195,7 +194,7 @@ fun ToolStorePage() {
                                     when {
                                         busy -> CircularProgressIndicator(modifier = Modifier.size(18.dp))
                                         pkgs[pkg] == true -> Text("已安装", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                        !hasPriv || !env.installed -> Text("不可用", style = MaterialTheme.typography.bodySmall)
+                                        !env.installed -> Text("需先装环境", style = MaterialTheme.typography.bodySmall)
                                         else -> TextButton(onClick = { scope.launch { mgr.installPackage(pkg) } }) { Text("安装") }
                                     }
                                 },
