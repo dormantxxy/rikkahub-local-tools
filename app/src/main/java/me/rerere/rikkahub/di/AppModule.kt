@@ -8,7 +8,6 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.rikkahub.data.localtools.TaskPlanStore
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -32,7 +31,7 @@ val appModule = module {
     }
 
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get())
     }
 
     single {
@@ -162,10 +161,6 @@ val appModule = module {
     // 本地工具
     single {
         ShellExecutor(context = get())
-    }
-
-    single {
-        TaskPlanStore(get())
     }
 
     single {

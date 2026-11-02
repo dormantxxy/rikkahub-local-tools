@@ -23,6 +23,7 @@ val TOOL_EXTENSIONS: List<ToolExtension> = listOf(
     ToolExtension("ripgrep", "ripgrep", "14.1.1", "高速代码搜索 rg", "rg", "bin/rg", 3, "开发"),
     ToolExtension("openssh", "OpenSSH", "10.5p1", "ssh / scp / sftp", "ssh", "bin/ssh", 22, "网络"),
     ToolExtension("sqlite", "SQLite", "3.53.4", "sqlite3 命令行", "sqlite3", "bin/sqlite3", 8, "数据"),
+    ToolExtension("python", "Python", "3.14.6", "Python 运行时 + pip", "python3", "bin/python3", 96, "开发"),
 )
 
 /** 扩展包下载源：GitHub Release + 国内镜像 */
@@ -42,3 +43,37 @@ object ExtensionMirrors {
     fun url(spec: ToolExtension, mirror: String): String =
         "$mirror/$OWNER_REPO/releases/download/$TAG/${assetName(spec)}"
 }
+
+/** 完整 Linux 环境（Alpine + 内置 proot）：仅 3.9MB，不依赖工作区 */
+object LinuxEnv {
+    const val VERSION = "3.20.3"
+    /** 依次尝试的镜像（阿里云最快） */
+    val MIRRORS = listOf(
+        "https://mirrors.aliyun.com/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
+        "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
+    )
+    const val APK_MAIN = "https://mirrors.aliyun.com/alpine/v3.20/main"
+    const val APK_COMMUNITY = "https://mirrors.aliyun.com/alpine/v3.20/community"
+}
+
+/** 完整环境里可一键安装的常用包 */
+data class LinuxPackage(val pkg: String, val label: String, val desc: String, val bin: String)
+
+val LINUX_PACKAGES: List<LinuxPackage> = listOf(
+    LinuxPackage("build-base", "编译工具 (gcc/make)", "C/C++ 编译全套", "gcc"),
+    LinuxPackage("make", "make", "构建工具", "make"),
+    LinuxPackage("git", "Git", "版本控制", "git"),
+    LinuxPackage("python3", "Python 3", "脚本运行", "python3"),
+    LinuxPackage("py3-pip", "pip", "Python 包管理", "pip3"),
+    LinuxPackage("nodejs", "Node.js", "JS 运行时", "node"),
+    LinuxPackage("npm", "npm", "Node 包管理", "npm"),
+    LinuxPackage("ffmpeg", "FFmpeg", "音视频处理", "ffmpeg"),
+    LinuxPackage("vim", "vim", "编辑器", "vim"),
+    LinuxPackage("curl", "curl", "HTTP 工具", "curl"),
+    LinuxPackage("jq", "jq", "JSON 处理", "jq"),
+    LinuxPackage("openssh-client", "OpenSSH", "ssh/scp", "ssh"),
+    LinuxPackage("zip", "zip", "压缩", "zip"),
+    LinuxPackage("unzip", "unzip", "解压", "unzip"),
+    LinuxPackage("sqlite", "SQLite", "sqlite3", "sqlite3"),
+    LinuxPackage("rsync", "rsync", "增量同步", "rsync"),
+)

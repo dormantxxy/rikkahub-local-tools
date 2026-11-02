@@ -21,7 +21,7 @@ import me.rerere.rikkahub.data.localtools.shellQuote
  * 权限自动按 root > shizuku > 普通 选择。
  */
 
-internal fun buildRunShellTool(executor: ShellExecutor, settingsStore: SettingsStore): Tool = Tool(
+internal fun buildRunShellTool(executor: ShellExecutor, settingsStore: SettingsStore, defaultDir: String): Tool = Tool(
     name = "run_shell_command",
     description = """
         Execute a shell command on the Android device and return stdout/stderr/exit code.
@@ -53,7 +53,7 @@ internal fun buildRunShellTool(executor: ShellExecutor, settingsStore: SettingsS
         val command = params["command"]?.jsonPrimitive?.contentOrNull
             ?: error("command is required")
         val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
-            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { null }
+            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { defaultDir }
         val timeoutMs = (
             params["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000)
                 ?: 60_000.0
@@ -201,7 +201,7 @@ internal fun buildManageFilesTool(executor: ShellExecutor, settingsStore: Settin
     }
 )
 
-internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager, settingsStore: SettingsStore): Tool = Tool(
+internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager, settingsStore: SettingsStore, defaultDir: String): Tool = Tool(
     name = "run_cli_tool",
     description = """
         Run a command-line tool (git, python3, pip, ssh, curl, etc.) on the device.
@@ -233,7 +233,7 @@ internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsMa
         val command = params["command"]?.jsonPrimitive?.contentOrNull
             ?: error("command is required")
         val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
-            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { null }
+            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { defaultDir }
         val timeoutMs = (
             params["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000)
                 ?: 120_000.0

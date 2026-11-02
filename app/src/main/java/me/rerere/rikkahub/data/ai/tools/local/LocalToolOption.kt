@@ -61,7 +61,4 @@ sealed class LocalToolOption {
     @SerialName("file_tree")
     data object FileTree : LocalToolOption()
 
-    @Serializable
-    @SerialName("tasks")
-    data object Tasks : LocalToolOption()
 }

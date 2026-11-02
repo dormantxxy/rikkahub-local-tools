@@ -52,11 +52,14 @@ class ShellExecutor(
      * 首选执行模式：有 root 默认用 root，其次 shizuku，最后普通权限。
      * 用户要求：root-shizuku-普通 顺序。
      */
-    fun preferredMode(): ShellMode = when {
+    fun preferredMode(): ShellMode? = when {
         isRootAvailable() -> ShellMode.ROOT
         isShizukuAvailable() -> ShellMode.SHIZUKU
-        else -> ShellMode.NORMAL
+        else -> null
     }
+
+    /** 是否具备执行 CLI 的权限（只支持 root / shizuku，不再支持普通权限） */
+    fun hasPrivilege(): Boolean = isRootAvailable() || isShizukuAvailable()
 
     /** 检测 shizuku 是否可用（通过反射，避免硬依赖） */
     fun isShizukuAvailable(): Boolean {
@@ -92,7 +95,7 @@ class ShellExecutor(
         command: String,
         cwd: String? = null,
         timeoutMillis: Long = 60_000,
-        mode: ShellMode = ShellMode.NORMAL,
+        mode: ShellMode = ShellMode.SHIZUKU,
     ): ShellResult = withContext(Dispatchers.IO) {
         when (mode) {
             ShellMode.NORMAL -> executeNormal(command, cwd, timeoutMillis)

@@ -6,7 +6,6 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.rikkahub.data.localtools.TaskPlanStore
 import me.rerere.rikkahub.data.localtools.ToolLogEntry
 import me.rerere.rikkahub.data.localtools.ToolLogStore
 import me.rerere.tts.provider.TTSManager
@@ -18,7 +17,6 @@ class LocalTools(
     private val settingsStore: SettingsStore,
     private val shellExecutor: ShellExecutor,
     private val toolsManager: LocalToolsManager,
-    private val taskPlanStore: TaskPlanStore,
 ) {
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -30,13 +28,12 @@ class LocalTools(
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
     val chartDisplayTool by lazy { buildChartDisplayTool() }
 
-    val runShellTool by lazy { buildRunShellTool(shellExecutor, settingsStore) }
+    val runShellTool by lazy { buildRunShellTool(shellExecutor, settingsStore, context.filesDir.absolutePath) }
     val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, settingsStore) }
-    val runCliTool by lazy { buildRunCliTool(shellExecutor, toolsManager, settingsStore) }
+    val runCliTool by lazy { buildRunCliTool(shellExecutor, toolsManager, settingsStore, context.filesDir.absolutePath) }
     val webFetchTool by lazy { buildWebFetchTool() }
     val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, toolsManager, settingsStore) }
     val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, toolsManager, settingsStore) }
-    val manageTasksTool by lazy { buildManageTasksTool(taskPlanStore) }
 
     fun getTools(options: List<LocalToolOption>): List<Tool> {
         val tools = mutableListOf<Tool>()
@@ -51,13 +48,14 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        if (options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
-        if (options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
-        if (options.contains(LocalToolOption.Cli)) tools.add(runCliTool)
+        // 只支持 root / Shizuku：无权限时这些 CLI 类工具不注册，避免 AI 调用报错
+        val privileged = shellExecutor.hasPrivilege()
+        if (privileged && options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
+        if (privileged && options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
+        if (privileged && options.contains(LocalToolOption.Cli)) tools.add(runCliTool)
+        if (privileged && options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
+        if (privileged && options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
-        if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
-        if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
-        if (options.contains(LocalToolOption.Tasks)) tools.add(manageTasksTool)
         return tools.map { it.logged() }
     }
 

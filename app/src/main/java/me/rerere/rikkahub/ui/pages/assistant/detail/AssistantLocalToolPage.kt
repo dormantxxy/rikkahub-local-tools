@@ -58,7 +58,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
-import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.data.localtools.LINUX_PACKAGES
 import me.rerere.rikkahub.data.localtools.TOOL_EXTENSIONS
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.model.Assistant
@@ -122,13 +122,19 @@ private fun AssistantLocalToolContent(
     val scope = rememberCoroutineScope()
 
     val extStates by toolsManager.extensionStates.collectAsStateWithLifecycle()
+    val linuxEnv by toolsManager.linuxEnv.collectAsStateWithLifecycle()
+    val linuxPkgs by toolsManager.linuxPackages.collectAsStateWithLifecycle()
+    val installingLinuxPkg by toolsManager.installingLinuxPkg.collectAsStateWithLifecycle()
+    val linuxPkgError by toolsManager.linuxPkgError.collectAsStateWithLifecycle()
+    // 只支持 root / shizuku：无权限时 CLI 相关不可用
+    var hasPriv by remember { mutableStateOf(false) }
     val navController = LocalNavController.current
-    val settingsStore: SettingsStore = koinInject()
-    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
-    var projectInput by remember { mutableStateOf("") }
 
-    LaunchedEffect(Unit) { toolsManager.refreshPackages() }
-    LaunchedEffect(settings.projectPath) { projectInput = settings.projectPath }
+    LaunchedEffect(Unit) {
+        hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable()
+        toolsManager.refreshPackages()
+        toolsManager.refreshLinuxPackages()
+    }
 
     val calendarPermissionState = rememberPermissionState(
         permissions = setOf(
@@ -317,54 +323,95 @@ private fun AssistantLocalToolContent(
                 title = "文件树",
                 description = "列出项目目录结构，便于 AI 快速定位文件",
             )
-            toolItemStr(
-                option = LocalToolOption.Tasks,
-                icon = HugeIcons.CheckList,
-                title = "任务计划",
-                description = "AI 可拆解任务并勾选进度（侧滑栏「任务计划」可查看）",
-            )
         }
 
-        // ===== 项目 =====
-        CardGroup(title = { Text("项目") }) {
-            formItem {
-                Text(
-                    "当前项目目录（AI 的 shell/文件/CLI 工具默认在此工作）",
-                    style = MaterialTheme.typography.bodySmall,
+        // ===== 权限提示 =====
+        if (!hasPriv) {
+            CardGroup(title = { Text("权限不足") }) {
+                item(
+                    headlineContent = { Text("需要 root 或 Shizuku") },
+                    supportingContent = { Text("已移除普通权限模式。CLI 工具（Shell/文件/CLI）需要 root 或 Shizuku 才能运行，请先授权。") },
+                    trailingContent = {
+                        TextButton(onClick = { scope.launch { hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable() } }) {
+                            Text("重新检测")
+                        }
+                    },
                 )
-                Row(
-                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    OutlinedTextField(
-                        value = projectInput,
-                        onValueChange = { projectInput = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("/storage/emulated/0/…") },
-                        singleLine = true,
-                    )
-                    TextButton(
-                        onClick = {
-                            scope.launch { settingsStore.update { it.copy(projectPath = projectInput.trim()) } }
-                        },
-                    ) { Text("应用") }
-                }
             }
+        }
+
+        // ===== 完整 Linux 环境（Alpine + 内置 proot） =====
+        CardGroup(title = { Text("完整 Linux 环境（Alpine + proot，3.9MB）") }) {
             item(
-                headlineContent = {
-                    Text(if (settings.projectPath.isBlank()) "未设置项目（默认 /storage/emulated/0）" else settings.projectPath)
+                headlineContent = { Text(if (linuxEnv.installed) "已安装" else "未安装") },
+                supportingContent = {
+                    Text(
+                        if (linuxEnv.installed) "可 apk 安装任意包（gcc/make/nodejs/ffmpeg…），CLI 优先走此环境"
+                        else "仅需下载 3.9MB（proot 已内置于 APK），装好后可安装任意软件包"
+                    )
                 },
-                supportingContent = { Text("选中后 AI 工具在 this 目录下工作") },
-            )
-            item(
-                headlineContent = {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { projectInput = "/storage/emulated/0/MobiCode Studio/Projects" }) { Text("Projects") }
-                        TextButton(onClick = { projectInput = "/storage/emulated/0/Download" }) { Text("Download") }
-                        TextButton(onClick = { projectInput = ""; scope.launch { settingsStore.update { it.copy(projectPath = "") } } }) { Text("清空") }
+                trailingContent = {
+                    when {
+                        !hasPriv -> Text("不可用", color = MaterialTheme.colorScheme.error)
+                        linuxEnv.installing -> CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                        linuxEnv.installed -> TextButton(onClick = { scope.launch { toolsManager.removeLinuxEnv() } }) { Text("卸载") }
+                        else -> FilledTonalButton(onClick = { scope.launch { toolsManager.installLinuxEnv() } }) { Text("安装") }
                     }
                 },
             )
+            if (linuxEnv.installing) {
+                formItem {
+                    Column {
+                        val total = linuxEnv.totalBytes
+                        if (total != null && total > 0) {
+                            LinearProgressIndicator(
+                                progress = { (linuxEnv.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        } else {
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                        Text(
+                            "${linuxEnv.message} ${linuxEnv.bytesRead / 1024}KB" + (total?.let { " / ${it / 1024}KB" } ?: ""),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
+            }
+            linuxEnv.error?.let { err ->
+                item(
+                    headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
+                    trailingContent = { TextButton(onClick = { toolsManager.dismissLinuxErrors() }) { Text("关闭") } },
+                )
+            }
+        }
+
+        // ===== 环境内软件包 =====
+        if (linuxEnv.installed) {
+            CardGroup(title = { Text("安装软件包（apk，任意包可用）") }) {
+                for (lp in LINUX_PACKAGES) {
+                    val installed = linuxPkgs[lp.pkg] == true
+                    val busy = lp.pkg in installingLinuxPkg
+                    item(
+                        headlineContent = { Text(lp.label) },
+                        supportingContent = { Text(if (busy) "安装中..." else lp.desc) },
+                        trailingContent = {
+                            when {
+                                busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                                installed -> Text("已安装", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                !hasPriv -> Text("不可用", style = MaterialTheme.typography.bodySmall)
+                                else -> FilledTonalButton(onClick = { scope.launch { toolsManager.installLinuxPackage(lp.pkg) } }) { Text("安装") }
+                            }
+                        },
+                    )
+                }
+                linuxPkgError?.let { err ->
+                    item(
+                        headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
+                        trailingContent = { TextButton(onClick = { toolsManager.dismissLinuxErrors() }) { Text("关闭") } },
+                    )
+                }
+            }
         }
 
         // ===== 工具扩展（在线下载） =====

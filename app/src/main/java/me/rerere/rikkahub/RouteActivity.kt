@@ -134,7 +134,6 @@ import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
 import me.rerere.rikkahub.ui.pages.setting.LocalToolsPage
 import me.rerere.rikkahub.ui.pages.setting.SettingAutomationPage
-import me.rerere.rikkahub.ui.pages.task.TaskPlanPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
@@ -486,9 +485,6 @@ class RouteActivity : ComponentActivity() {
                                 SettingAutomationPage()
                             }
 
-                            entry<Screen.TaskPlan> {
-                                TaskPlanPage()
-                            }
 
                             entry<Screen.SettingProvider> {
                                 SettingProviderPage()
@@ -759,8 +755,6 @@ sealed interface Screen : NavKey {
     @Serializable
     data object SettingAutomation : Screen
 
-    @Serializable
-    data object TaskPlan : Screen
 
     @Serializable
     data object SettingProvider : Screen
