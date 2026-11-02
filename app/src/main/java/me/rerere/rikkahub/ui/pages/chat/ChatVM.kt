@@ -202,8 +202,18 @@ class ChatVM(
         }
     }
 
-    // 更新检测已移除，固定为 Loading 状态（界面不显示更新提示）
-    val updateState: StateFlow<UiState> = kotlinx.coroutines.flow.MutableStateFlow(UiState.Loading)
+    // 更新检测已移除：条件恒为 false，永远不触发检查（保持原 StateFlow 类型不变）
+    val updateState = settingsStore.settingsFlow
+        .map { false }
+        .distinctUntilChanged()
+        .flatMapLatest { enabled ->
+            if (enabled) updateChecker.updateState else flowOf(UiState.Loading)
+        }
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000),
+            UiState.Loading,
+        )
 
     /**
      * 处理消息发送
