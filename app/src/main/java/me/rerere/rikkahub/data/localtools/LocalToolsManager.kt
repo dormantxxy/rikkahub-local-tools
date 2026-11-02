@@ -44,11 +44,11 @@ class LocalToolsManager(
     private val _linuxEnv = MutableStateFlow(LinuxEnvState(installed = isLinuxEnvInstalled()))
     val linuxEnv: StateFlow<LinuxEnvState> = _linuxEnv.asStateFlow()
 
-    private val _bundleStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
-    val bundleStates: StateFlow<Map<String, Boolean>> = _bundleStates.asStateFlow()
+    private val _packageStates = MutableStateFlow<Map<String, Boolean>>(emptyMap())
+    val packageStates: StateFlow<Map<String, Boolean>> = _packageStates.asStateFlow()
 
-    private val _installingBundles = MutableStateFlow<Set<String>>(emptySet())
-    val installingBundles: StateFlow<Set<String>> = _installingBundles.asStateFlow()
+    private val _installingPackages = MutableStateFlow<Set<String>>(emptySet())
+    val installingPackages: StateFlow<Set<String>> = _installingPackages.asStateFlow()
 
     private val _linuxPkgError = MutableStateFlow<String?>(null)
     val linuxPkgError: StateFlow<String?> = _linuxPkgError.asStateFlow()
@@ -99,7 +99,7 @@ class LocalToolsManager(
             File(alpineDir, "etc/apk/repositories").writeText(LinuxEnv.APK_REPOS.joinToString("\n") + "\n")
             archive.delete()
             _linuxEnv.value = LinuxEnvState(installed = true, message = "已安装")
-            refreshBundles()
+            refreshPackages()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
@@ -115,34 +115,12 @@ class LocalToolsManager(
         _linuxPackages.value = emptyMap()
     }
 
-    /** 安装一组工具（apk add 整组包） */
-    suspend fun installBundle(bundleId: String) {
-        val bundle = CLI_BUNDLES.firstOrNull { it.id == bundleId } ?: return
+    /** 安装单个扩展（apk add） */
+    suspend fun installPackage(pkg: String) {
         val mode = shellExecutor.preferredMode()
         if (mode == null) { _linuxPkgError.value = "需要 root 或 Shizuku"; return }
         if (!isLinuxEnvInstalled()) { _linuxPkgError.value = "请先安装完整 Linux 环境（3.9MB）"; return }
-        _installingBundles.update { it + bundleId }
-        _linuxPkgError.value = null
-        try {
-            val pkgs = bundle.pkgs.joinToString(" ")
-            val r = runInLinux("apk update >/dev/null 2>&1; apk add --no-cache $pkgs 2>&1", 1_800_000, mode)
-            if (r.exitCode != 0) _linuxPkgError.value = "安装 ${bundle.label} 失败：${r.output.take(400)}"
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            _linuxPkgError.value = "安装 ${bundle.label} 失败：${e.message}"
-        } finally {
-            _installingBundles.update { it - bundleId }
-            refreshBundles()
-        }
-    }
-
-    /** 安装任意单个包（自定义） */
-    suspend fun installRawPackage(pkg: String) {
-        val mode = shellExecutor.preferredMode()
-        if (mode == null) { _linuxPkgError.value = "需要 root 或 Shizuku"; return }
-        if (!isLinuxEnvInstalled()) { _linuxPkgError.value = "请先安装完整 Linux 环境（3.9MB）"; return }
-        _installingBundles.update { it + pkg }
+        _installingPackages.update { it + pkg }
         _linuxPkgError.value = null
         try {
             val r = runInLinux("apk update >/dev/null 2>&1; apk add --no-cache $pkg 2>&1", 1_800_000, mode)
@@ -152,27 +130,27 @@ class LocalToolsManager(
         } catch (e: Throwable) {
             _linuxPkgError.value = "安装 $pkg 失败：${e.message}"
         } finally {
-            _installingBundles.update { it - pkg }
-            refreshBundles()
+            _installingPackages.update { it - pkg }
+            refreshPackages()
         }
     }
 
-    suspend fun refreshBundles() {
+    suspend fun refreshPackages() {
         if (!isLinuxEnvInstalled()) {
-            _bundleStates.value = CLI_BUNDLES.associate { it.id to false }
+            _packageStates.value = STORE_PACKAGES.associate { it.pkg to false }
             _linuxEnv.update { it.copy(installed = false) }
             return
         }
         _linuxEnv.update { it.copy(installed = true) }
         val mode = shellExecutor.preferredMode() ?: return
-        val probes = CLI_BUNDLES.map { it.probe }.distinct()
+        val bins = STORE_PACKAGES.map { it.bin }.distinct()
         val r = runInLinux(
-            "for b in ${probes.joinToString(" ")}; do command -v \$b >/dev/null 2>&1 && echo \"\$b=OK\"; done",
+            "for b in ${bins.joinToString(" ")}; do command -v \$b >/dev/null 2>&1 && echo \"\$b=OK\"; done",
             60_000, mode,
         )
         val found = r.stdout.lineSequence().filter { it.contains("=OK") }
             .map { it.substringBefore('=').trim() }.toSet()
-        _bundleStates.value = CLI_BUNDLES.associate { it.id to found.contains(it.probe) }
+        _packageStates.value = STORE_PACKAGES.associate { it.pkg to found.contains(it.bin) }
     }
 
     /** 在 proot(Alpine) 里执行 */
