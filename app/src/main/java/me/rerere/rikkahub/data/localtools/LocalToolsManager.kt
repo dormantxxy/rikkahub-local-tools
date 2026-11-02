@@ -42,7 +42,7 @@ class LocalToolsManager(
 
     /** 刷新所有工具状态 */
     suspend fun refreshTools() {
-        val config = settingsStore.settingsFlow.value
+        val config = settingsStore.settingsFlow.value.localToolsConfig
         val infos = mutableMapOf<LocalToolType, LocalToolInfo>()
         for (type in LocalToolType.entries) {
             infos[type] = queryToolStatus(type, config)
