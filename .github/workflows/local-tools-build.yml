@@ -1,0 +1,107 @@
+name: Local Tools Build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web-ui/pnpm-lock.yaml
+
+      - name: Install web-ui dependencies
+        working-directory: web-ui
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Android SDK
+        run: |
+          set -e
+          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMGR="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          if [ -z "$SDKMGR" ]; then
+            echo "sdkmanager not found, trying to locate"
+            SDKMGR="$(find "$ANDROID_HOME" -name sdkmanager 2>/dev/null | head -n1)"
+          fi
+          echo "sdkmanager=$SDKMGR"
+          yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
+          "$SDKMGR" "platforms;android-37" "build-tools;37.0.0" "platform-tools" || \
+          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+
+      - name: Generate debug keystore and signing config
+        run: |
+          KEYSTORE="$PWD/app/debug.keystore"
+          keytool -genkeypair -v \
+            -keystore "$KEYSTORE" \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
+          cat >> local.properties << EOF
+          storeFile=$KEYSTORE
+          storePassword=android
+          keyAlias=androiddebugkey
+          keyPassword=android
+          EOF
+          echo "local.properties:"
+          cat local.properties
+
+      - name: Gradle cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build GitHub release APK
+        run: ./gradlew assembleGithubRelease --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rikkahub-local-tools-apk
+          path: app/build/outputs/apk/github/release/*.apk
+
+      - name: Publish prerelease
+        uses: softprops/action-gh-release@v2
+        if: success()
+        with:
+          tag_name: local-tools
+          name: Local Tools Build
+          prerelease: true
+          body: |
+            RikkaHub with Local Tools support build (commit `${{ github.sha }}`)
+          files: |
+            app/build/outputs/apk/github/release/*.apk
