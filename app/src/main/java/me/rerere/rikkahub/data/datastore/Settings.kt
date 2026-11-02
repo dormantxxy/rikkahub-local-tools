@@ -85,6 +85,7 @@ data class Settings(
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val sponsorAlertDismissedAt: Int = 0,
     val localToolsConfig: LocalToolsConfig = LocalToolsConfig(),
+    val automationConfig: AutomationConfig = AutomationConfig(),
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

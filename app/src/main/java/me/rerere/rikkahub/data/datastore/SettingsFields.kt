@@ -175,6 +175,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 本地工具
         json(LOCAL_TOOLS_CONFIG, Settings::localToolsConfig) { copy(localToolsConfig = it) },
+
+        // 自动化
+        json(AUTOMATION_CONFIG, Settings::automationConfig) { copy(automationConfig = it) },
     )
 }
 
