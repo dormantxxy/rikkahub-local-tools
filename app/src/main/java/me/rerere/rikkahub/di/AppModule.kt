@@ -173,7 +173,6 @@ val appModule = module {
             context = get(),
             settingsStore = get(),
             shellExecutor = get(),
-            workspaceRepository = get(),
         )
     }
 }

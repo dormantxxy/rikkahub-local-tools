@@ -56,10 +56,8 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
-import me.rerere.rikkahub.data.localtools.ROOTFS_PACKAGES
+import me.rerere.rikkahub.data.localtools.TOOL_EXTENSIONS
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
-import me.rerere.rikkahub.data.localtools.RootfsDistro
-import me.rerere.rikkahub.data.localtools.RootfsPackageGroup
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -120,13 +118,7 @@ private fun AssistantLocalToolContent(
     val toolsManager: LocalToolsManager = koinInject()
     val scope = rememberCoroutineScope()
 
-    val envReady by toolsManager.envReady.collectAsStateWithLifecycle()
-    val linkedName by toolsManager.linkedWorkspaceName.collectAsStateWithLifecycle()
-    val distro by toolsManager.distro.collectAsStateWithLifecycle()
-    val packageStates by toolsManager.packageStates.collectAsStateWithLifecycle()
-    val installing by toolsManager.installingPackages.collectAsStateWithLifecycle()
-    val packageMessages by toolsManager.packageMessages.collectAsStateWithLifecycle()
-    val packageError by toolsManager.packageError.collectAsStateWithLifecycle()
+    val extStates by toolsManager.extensionStates.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
     val settingsStore: SettingsStore = koinInject()
     val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
@@ -372,74 +364,52 @@ private fun AssistantLocalToolContent(
             )
         }
 
-        // ===== CLI 运行环境（复用工作区 rootfs） =====
-        CardGroup(title = { Text("CLI 运行环境（工作区）") }) {
+        // ===== 工具扩展（在线下载） =====
+        CardGroup(title = { Text("工具扩展（在线下载）") }) {
             item(
-                headlineContent = {
-                    Text(if (envReady) "已关联：${linkedName ?: "工作区"}" else "未找到已安装 rootfs 的工作区")
-                },
-                supportingContent = {
-                    Text(
-                        if (envReady) "发行版 ${distroLabel(distro)} · CLI 工具在该 rootfs 内运行"
-                        else "请先在 设置 → 扩展 → 工作区 安装 rootfs，这里会自动关联"
-                    )
-                },
-                trailingContent = {
-                    if (envReady) {
-                        TextButton(onClick = { scope.launch { toolsManager.refreshPackages() } }) { Text("刷新") }
-                    } else {
-                        FilledTonalButton(onClick = { navController.navigate(Screen.Workspaces) }) { Text("前往工作区") }
-                    }
-                },
+                headlineContent = { Text("点「安装」后从镜像站在线下载，APK 内不内置任何工具") },
+                supportingContent = { Text("下载源：GitHub Release（ghfast/ghproxy 镜像自动回退）") },
             )
-        }
-
-        // ===== 工具包（按分组） =====
-        for (group in RootfsPackageGroup.entries) {
-            val pkgs = ROOTFS_PACKAGES.filter { it.group == group }
-            if (pkgs.isEmpty()) continue
-            CardGroup(title = { Text(group.title) }) {
-                for (pkg in pkgs) {
-                    val installed = packageStates[pkg.bin] == true
-                    val busy = pkg.label in installing
-                    item(
-                        headlineContent = { Text(pkg.label) },
-                        supportingContent = {
-                            Text(if (busy) (packageMessages[pkg.label] ?: "安装中...") else pkg.desc)
-                        },
-                        trailingContent = {
-                            when {
-                                busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                installed -> TextButton(
-                                    enabled = envReady,
-                                    onClick = { scope.launch { toolsManager.removePackage(pkg.label) } },
-                                ) { Text("卸载") }
-                                else -> FilledTonalButton(
-                                    enabled = envReady,
-                                    onClick = { scope.launch { toolsManager.installPackage(pkg.label) } },
-                                ) { Text("安装") }
-                            }
-                        },
-                    )
-                }
-            }
-        }
-
-        packageError?.let { err ->
-            CardGroup {
+            for (spec in TOOL_EXTENSIONS) {
+                val st = extStates[spec.id]
+                val installed = st?.installed == true
+                val installing = st?.installing == true
                 item(
-                    headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
+                    headlineContent = { Text("${spec.name}  ${spec.version}") },
+                    supportingContent = {
+                        Column {
+                            Text(if (installing) (st?.message ?: "下载中...") else "${spec.desc} · ${spec.sizeMb}MB")
+                            if (installing) {
+                                val total = st?.totalBytes
+                                if (total != null && total > 0) {
+                                    LinearProgressIndicator(
+                                        progress = { (st.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                } else {
+                                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                }
+                                Text(
+                                    "${st.bytesRead / 1024 / 1024}MB" + (st.totalBytes?.let { " / ${it / 1024 / 1024}MB" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                            st?.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        }
+                    },
                     trailingContent = {
-                        TextButton(onClick = { toolsManager.dismissPackageError() }) { Text("关闭") }
+                        when {
+                            installing -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            installed -> TextButton(
+                                onClick = { scope.launch { toolsManager.removeExtension(spec) } },
+                            ) { Text("卸载") }
+                            else -> FilledTonalButton(
+                                onClick = { scope.launch { toolsManager.installExtension(spec) } },
+                            ) { Text("安装") }
+                        }
                     },
                 )
             }
         }
     }
-}
-
-private fun distroLabel(d: RootfsDistro): String = when (d) {
-    RootfsDistro.ALPINE -> "Alpine (apk)"
-    RootfsDistro.DEBIAN -> "Debian/Ubuntu (apt)"
-    RootfsDistro.UNKNOWN -> "未知"
 }
