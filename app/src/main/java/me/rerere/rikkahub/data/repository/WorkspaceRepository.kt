@@ -75,6 +75,19 @@ class WorkspaceRepository(
 
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
 
+    /**
+     * 找到第一个「已安装 rootfs 的本地工作区」。
+     * 本地工具的 CLI 环境直接复用它的 rootfs，不再单独下载。
+     */
+    suspend fun findLocalRootfsWorkspace(): WorkspaceEntity? = withContext(Dispatchers.IO) {
+        dao.getAll().firstOrNull { it.capabilities().localFiles && manager.hasRootfs(it.root) }
+    }
+
+    /** 本地（非 SSH）工作区列表 */
+    suspend fun listLocalWorkspaces(): List<WorkspaceEntity> = withContext(Dispatchers.IO) {
+        dao.getAll().filter { it.capabilities().localFiles }
+    }
+
     suspend fun create(name: String): WorkspaceEntity {
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()

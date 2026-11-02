@@ -49,9 +49,12 @@ import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
 import me.rerere.rikkahub.data.localtools.ROOTFS_PACKAGES
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
+import me.rerere.rikkahub.data.localtools.RootfsDistro
 import me.rerere.rikkahub.data.localtools.RootfsPackageGroup
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -67,8 +70,6 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
 import me.rerere.ui.toast.ToastType
-import me.rerere.workspace.RootfsInstallProgress
-import me.rerere.workspace.RootfsInstallStage
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -115,24 +116,16 @@ private fun AssistantLocalToolContent(
     val toolsManager: LocalToolsManager = koinInject()
     val scope = rememberCoroutineScope()
 
-    val rootfsProgress by toolsManager.rootfsProgress.collectAsStateWithLifecycle()
-    val rootfsError by toolsManager.rootfsError.collectAsStateWithLifecycle()
+    val envReady by toolsManager.envReady.collectAsStateWithLifecycle()
+    val linkedName by toolsManager.linkedWorkspaceName.collectAsStateWithLifecycle()
+    val distro by toolsManager.distro.collectAsStateWithLifecycle()
     val packageStates by toolsManager.packageStates.collectAsStateWithLifecycle()
     val installing by toolsManager.installingPackages.collectAsStateWithLifecycle()
     val packageMessages by toolsManager.packageMessages.collectAsStateWithLifecycle()
     val packageError by toolsManager.packageError.collectAsStateWithLifecycle()
-    var rootfsInstalled by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val navController = LocalNavController.current
 
-    LaunchedEffect(Unit) {
-        rootfsInstalled = toolsManager.isRootfsInstalled()
-        if (rootfsInstalled) toolsManager.refreshPackages()
-    }
-    // 安装结束（progress 变 null）时刷新安装状态；包状态由 manager 内部刷新，避免循环
-    LaunchedEffect(rootfsProgress) {
-        if (rootfsProgress == null) {
-            rootfsInstalled = toolsManager.isRootfsInstalled()
-        }
-    }
+    LaunchedEffect(Unit) { toolsManager.refreshPackages() }
 
     val calendarPermissionState = rememberPermissionState(
         permissions = setOf(
@@ -311,48 +304,26 @@ private fun AssistantLocalToolContent(
             )
         }
 
-        // ===== 运行环境 =====
-        CardGroup(title = { Text("运行环境 (rootfs)") }) {
+        // ===== CLI 运行环境（复用工作区 rootfs） =====
+        CardGroup(title = { Text("CLI 运行环境（工作区）") }) {
             item(
-                headlineContent = { Text(if (rootfsInstalled) "已安装" else "未安装") },
+                headlineContent = {
+                    Text(if (envReady) "已关联：${linkedName ?: "工作区"}" else "未找到已安装 rootfs 的工作区")
+                },
                 supportingContent = {
                     Text(
-                        if (rootfsInstalled) "Alpine + proot，CLI 工具都在此运行"
-                        else "安装后即可安装 git/python/node/ffmpeg 等工具"
+                        if (envReady) "发行版 ${distroLabel(distro)} · CLI 工具在该 rootfs 内运行"
+                        else "请先在 设置 → 扩展 → 工作区 安装 rootfs，这里会自动关联"
                     )
                 },
                 trailingContent = {
-                    if (rootfsProgress != null) {
-                        CircularProgressIndicator(modifier = Modifier.size(22.dp))
+                    if (envReady) {
+                        TextButton(onClick = { scope.launch { toolsManager.refreshPackages() } }) { Text("刷新") }
                     } else {
-                        FilledTonalButton(
-                            onClick = {
-                                scope.launch { toolsManager.installRootfs(force = rootfsInstalled) }
-                            },
-                        ) {
-                            Text(if (rootfsInstalled) "重装" else "安装")
-                        }
+                        FilledTonalButton(onClick = { navController.navigate(Screen.Workspaces) }) { Text("前往工作区") }
                     }
                 },
             )
-            rootfsProgress?.let { p ->
-                formItem {
-                    RootfsProgressBar(p)
-                }
-            }
-                        rootfsError?.let { err ->
-                item(
-                    headlineContent = {
-                        Text(
-                            text = err,
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    },
-                    trailingContent = {
-                        TextButton(onClick = { toolsManager.dismissRootfsError() }) { Text("关闭") }
-                    },
-                )
-            }
         }
 
         // ===== 工具包（按分组） =====
@@ -361,21 +332,23 @@ private fun AssistantLocalToolContent(
             if (pkgs.isEmpty()) continue
             CardGroup(title = { Text(group.title) }) {
                 for (pkg in pkgs) {
-                    val installed = packageStates[pkg.pkg] == true
-                    val busy = pkg.pkg in installing
+                    val installed = packageStates[pkg.bin] == true
+                    val busy = pkg.label in installing
                     item(
                         headlineContent = { Text(pkg.label) },
                         supportingContent = {
-                            Text(if (busy) (packageMessages[pkg.pkg] ?: "安装中...") else pkg.desc)
+                            Text(if (busy) (packageMessages[pkg.label] ?: "安装中...") else pkg.desc)
                         },
                         trailingContent = {
                             when {
                                 busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                 installed -> TextButton(
-                                    onClick = { scope.launch { toolsManager.removePackage(pkg.pkg) } },
+                                    enabled = envReady,
+                                    onClick = { scope.launch { toolsManager.removePackage(pkg.label) } },
                                 ) { Text("卸载") }
                                 else -> FilledTonalButton(
-                                    onClick = { scope.launch { toolsManager.installPackage(pkg.pkg) } },
+                                    enabled = envReady,
+                                    onClick = { scope.launch { toolsManager.installPackage(pkg.label) } },
                                 ) { Text("安装") }
                             }
                         },
@@ -397,27 +370,8 @@ private fun AssistantLocalToolContent(
     }
 }
 
-@Composable
-private fun RootfsProgressBar(p: RootfsInstallProgress) {
-    val total = p.totalBytes
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (total != null && total > 0) {
-            LinearProgressIndicator(
-                progress = { (p.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth(),
-            )
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        Text(
-            text = when (p.stage) {
-                RootfsInstallStage.DOWNLOADING ->
-                    "下载中 ${p.bytesRead / 1024 / 1024}MB" + (total?.let { " / ${it / 1024 / 1024}MB" } ?: "")
-                RootfsInstallStage.EXTRACTING ->
-                    "解压中" + (p.currentEntry?.let { "：$it" } ?: "")
-                RootfsInstallStage.INSTALLED -> "安装完成"
-            },
-            style = MaterialTheme.typography.bodySmall,
-        )
-    }
+private fun distroLabel(d: RootfsDistro): String = when (d) {
+    RootfsDistro.ALPINE -> "Alpine (apk)"
+    RootfsDistro.DEBIAN -> "Debian/Ubuntu (apt)"
+    RootfsDistro.UNKNOWN -> "未知"
 }
