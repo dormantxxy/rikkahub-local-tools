@@ -112,7 +112,7 @@ class LocalToolsManager(
         val mode = shellExecutor.preferredMode() ?: return
         shellExecutor.execute("rm -rf ${alpineDir.absolutePath.shellQuote()}", mode = mode)
         _linuxEnv.value = LinuxEnvState()
-        _linuxPackages.value = emptyMap()
+        _packageStates.value = emptyMap()
     }
 
     /** 安装单个扩展（apk add） */
