@@ -33,6 +33,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ArrowDown01
@@ -62,10 +63,24 @@ fun ToolStorePage() {
     var query by remember { mutableStateOf("") }
     var hasPriv by remember { mutableStateOf(false) }
     val expanded = remember { mutableStateMapOf<String, Boolean>() }
+    var remote by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         hasPriv = mgr.hasPrivilege()
         mgr.refreshPackages()
+    }
+
+    LaunchedEffect(query, env.installed) {
+        if (query.isBlank() || !env.installed) {
+            remote = emptyList()
+            searching = false
+        } else {
+            searching = true
+            delay(400)
+            remote = runCatching { mgr.searchRemote(query) }.getOrDefault(emptyList())
+            searching = false
+        }
     }
 
     val filtered = remember(query) {
@@ -148,6 +163,52 @@ fun ToolStorePage() {
                     placeholder = { Text("搜索扩展（git / python / ffmpeg …）") },
                     singleLine = true,
                 )
+            }
+
+            // ===== 仓库搜索结果（真实 apk search） =====
+            if (query.isNotBlank()) {
+                if (searching) {
+                    item("remote_loading") {
+                        CardGroup {
+                            item(
+                                headlineContent = { Text("正在搜索仓库…") },
+                                trailingContent = { CircularProgressIndicator(modifier = Modifier.size(18.dp)) },
+                            )
+                        }
+                    }
+                } else if (remote.isNotEmpty()) {
+                    item("remote_head") {
+                        CardGroup(title = { Text("仓库搜索结果（${remote.size}）") }) {
+                            item(
+                                headlineContent = { Text("来自 Alpine 仓库，可直接安装") },
+                                supportingContent = { Text("点右侧「安装」即可") },
+                            )
+                        }
+                    }
+                    items(remote, key = { "r_${it.first}" }) { (pkg, desc) ->
+                        CardGroup {
+                            item(
+                                headlineContent = { Text(pkg) },
+                                supportingContent = { Text(desc.ifBlank { "—" }, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                trailingContent = {
+                                    val busy = pkg in installing
+                                    when {
+                                        busy -> CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                                        pkgs[pkg] == true -> Text("已安装", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                        !hasPriv || !env.installed -> Text("不可用", style = MaterialTheme.typography.bodySmall)
+                                        else -> TextButton(onClick = { scope.launch { mgr.installPackage(pkg) } }) { Text("安装") }
+                                    }
+                                },
+                            )
+                        }
+                    }
+                } else if (env.installed) {
+                    item("remote_empty") {
+                        CardGroup {
+                            item(headlineContent = { Text("仓库里没搜到「$query」") })
+                        }
+                    }
+                }
             }
 
             // ===== 分组列表（点击展开） =====

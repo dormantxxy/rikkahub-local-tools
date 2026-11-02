@@ -87,16 +87,21 @@ class LocalToolsManager(
             if (!ok) throw IllegalStateException("下载失败：$lastErr")
 
             _linuxEnv.update { it.copy(message = "解压中...") }
-            alpineDir.deleteRecursively()
-            alpineDir.mkdirs()
-            val r = shellExecutor.execute(
-                "tar -xzf ${archive.absolutePath.shellQuote()} -C ${alpineDir.absolutePath.shellQuote()} 2>&1",
-                timeoutMillis = 300_000, mode = mode,
-            )
-            if (r.exitCode != 0) throw IllegalStateException("解压失败：${r.output.take(200)}")
-
-            // 写入国内 apk 源
-            File(alpineDir, "etc/apk/repositories").writeText(LinuxEnv.APK_REPOS.joinToString("\n") + "\n")
+            val uid = context.applicationInfo.uid
+            val reposFile = File(alpineDir, "etc/apk/repositories")
+            val reposText = LinuxEnv.APK_REPOS.joinToString("\n") + "\n"
+            val extractCmd = buildString {
+                append("rm -rf ${alpineDir.absolutePath.shellQuote()}; ")
+                append("mkdir -p ${alpineDir.absolutePath.shellQuote()} || exit 10; ")
+                append("tar -xzf ${archive.absolutePath.shellQuote()} -C ${alpineDir.absolutePath.shellQuote()} || exit 11; ")
+                append("mkdir -p ${File(alpineDir, "etc/apk").absolutePath.shellQuote()} || exit 12; ")
+                append("printf ${reposText.shellQuote()} > ${reposFile.absolutePath.shellQuote()} || exit 13; ")
+                append("chmod -R 755 ${alpineDir.absolutePath.shellQuote()} 2>/dev/null; ")
+                append("chown -R $uid:$uid ${alpineDir.absolutePath.shellQuote()} 2>/dev/null; ")
+                append("echo TX_OK")
+            }
+            val r = shellExecutor.execute(extractCmd, timeoutMillis = 300_000, mode = mode)
+            if (!r.stdout.contains("TX_OK")) throw IllegalStateException("解压失败：${r.output.take(300)}")
             archive.delete()
             _linuxEnv.value = LinuxEnvState(installed = true, message = "已安装")
             refreshPackages()
@@ -179,6 +184,28 @@ class LocalToolsManager(
             return ShellResult(-1, "", "请先在「本地工具」安装完整 Linux 环境（3.9MB）")
         }
         return runInLinux(command, timeoutMillis, mode)
+    }
+
+    /** 已安装的命令名（给 AI 工具描述用，省 token） */
+    fun installedCommands(): List<String> =
+        _packageStates.value.filterValues { it }.keys.sorted()
+
+    /** 在 Alpine 仓库里真实搜索（apk search），返回 包名 to 描述 */
+    suspend fun searchRemote(query: String, limit: Int = 40): List<Pair<String, String>> {
+        if (query.isBlank() || !isLinuxEnvInstalled()) return emptyList()
+        val mode = shellExecutor.preferredMode() ?: return emptyList()
+        val r = runInLinux("apk search -v ${query.shellQuote()} 2>/dev/null | head -$limit", 60_000, mode)
+        return r.stdout.lineSequence()
+            .filter { it.isNotBlank() && it.contains(" - ") }
+            .map { line ->
+                val left = line.substringBefore(" - ").trim()
+                val desc = line.substringAfter(" - ").trim()
+                val pkg = left.substringBeforeLast("-", left)
+                pkg to desc
+            }
+            .filter { it.first.isNotBlank() }
+            .distinctBy { it.first }
+            .toList()
     }
 
     fun hasPrivilege(): Boolean = shellExecutor.hasPrivilege()

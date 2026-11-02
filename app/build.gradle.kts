@@ -342,6 +342,10 @@ dependencies {
     implementation(project(":oauth"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
 
+    // Shizuku（root 替代方案）：让本 app 出现在 Shizuku 授权列表
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
+
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)
 

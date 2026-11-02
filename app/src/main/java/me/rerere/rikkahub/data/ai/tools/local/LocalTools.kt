@@ -30,7 +30,10 @@ class LocalTools(
 
     val runShellTool by lazy { buildRunShellTool(shellExecutor, settingsStore, context.filesDir.absolutePath) }
     val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, settingsStore) }
-    val runCliTool by lazy { buildRunCliTool(shellExecutor, toolsManager, settingsStore, context.filesDir.absolutePath) }
+    fun runCliTool() = buildRunCliTool(
+        shellExecutor, toolsManager, settingsStore,
+        context.filesDir.absolutePath, toolsManager.installedCommands(),
+    )
     val webFetchTool by lazy { buildWebFetchTool() }
     val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, toolsManager, settingsStore) }
     val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, toolsManager, settingsStore) }
@@ -52,7 +55,7 @@ class LocalTools(
         val privileged = shellExecutor.hasPrivilege()
         if (privileged && options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
         if (privileged && options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
-        if (privileged && options.contains(LocalToolOption.Cli)) tools.add(runCliTool)
+        if (privileged && options.contains(LocalToolOption.Cli)) tools.add(runCliTool())
         if (privileged && options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
         if (privileged && options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)

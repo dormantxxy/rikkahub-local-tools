@@ -202,15 +202,20 @@ internal fun buildManageFilesTool(executor: ShellExecutor, settingsStore: Settin
     }
 )
 
-internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager, settingsStore: SettingsStore, defaultDir: String): Tool = Tool(
+internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager, settingsStore: SettingsStore, defaultDir: String, installed: List<String>): Tool = Tool(
     name = "run_cli_tool",
-    description = """
-        Run any CLI inside the installed Linux environment (Alpine + proot, only root/Shizuku).
-        Typical commands available after installing packages: git, python3, pip, node, npm, rg, ssh,
-        curl, wget, jq, sqlite3, vim, nano, ffmpeg, make, gcc, cmake, go, rustc, java, php, ruby,
-        perl, tar, zip, unzip, 7z, tree, fzf, tmux, htop, aria2c, yt-dlp, pandoc, pdftotext, tesseract.
-        Use `which <cmd>` to check availability. Examples: "git status", "python3 main.py", "npm run build".
-    """.trimIndent().replace("\n", " "),
+    description = buildString {
+        append("Run any CLI inside the installed Linux environment (Alpine + proot, root/Shizuku only). ")
+        if (installed.isNotEmpty()) {
+            append("Currently installed commands: ")
+            append(installed.joinToString(", "))
+            append(". ")
+        } else {
+            append("No CLI command installed yet. ")
+        }
+        append("Install more from the extension store. Use `which <cmd>` to verify. ")
+        append("Examples: \"git status\", \"python3 main.py\", \"npm run build\".")
+    },
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
