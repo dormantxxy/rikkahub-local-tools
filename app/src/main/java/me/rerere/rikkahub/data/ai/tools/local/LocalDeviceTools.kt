@@ -14,6 +14,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
+import me.rerere.rikkahub.data.localtools.ShellMode
 import me.rerere.rikkahub.data.localtools.shellQuote
 
 /**
@@ -58,7 +59,7 @@ internal fun buildRunShellTool(executor: ShellExecutor, settingsStore: SettingsS
             params["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000)
                 ?: 60_000.0
             ).toLong().coerceIn(1_000L, 600_000L)
-        val mode = executor.preferredMode()
+        val mode = executor.preferredMode() ?: ShellMode.ROOT
         val result = executor.execute(command = command, cwd = cwd, timeoutMillis = timeoutMs, mode = mode)
         val payload = buildJsonObject {
             put("mode", mode.name.lowercase())
@@ -135,7 +136,7 @@ internal fun buildManageFilesTool(executor: ShellExecutor, settingsStore: Settin
         val pattern = params["pattern"]?.jsonPrimitive?.contentOrNull
         val maxChars = (params["max_chars"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 60_000)
             .coerceIn(256, 200_000)
-        val mode = executor.preferredMode()
+        val mode = executor.preferredMode() ?: ShellMode.ROOT
 
         suspend fun run(cmd: String): String {
             val r = executor.execute(cmd, timeoutMillis = 60_000, mode = mode)

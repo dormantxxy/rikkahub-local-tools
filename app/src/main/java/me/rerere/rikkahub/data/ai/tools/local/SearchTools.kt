@@ -11,6 +11,7 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
+import me.rerere.rikkahub.data.localtools.ShellMode
 import me.rerere.rikkahub.data.localtools.shellQuote
 
 /**
@@ -59,7 +60,7 @@ internal fun buildSearchCodeTool(
         val r = if (toolsManager.isRootfsInstalled()) {
             toolsManager.runInRootfs(cmd, timeoutMillis = 120_000)
         } else {
-            executor.execute(cmd, timeoutMillis = 120_000, mode = executor.preferredMode())
+            executor.execute(cmd, timeoutMillis = 120_000, mode = executor.preferredMode() ?: ShellMode.ROOT)
         }
         val payload = buildJsonObject {
             put("pattern", pattern)
@@ -99,7 +100,7 @@ internal fun buildFileTreeTool(
         val r = if (toolsManager.isRootfsInstalled()) {
             toolsManager.runInRootfs(cmd, timeoutMillis = 60_000)
         } else {
-            executor.execute(cmd, timeoutMillis = 60_000, mode = executor.preferredMode())
+            executor.execute(cmd, timeoutMillis = 60_000, mode = executor.preferredMode() ?: ShellMode.ROOT)
         }
         val payload = buildJsonObject {
             put("path", path)
