@@ -36,9 +36,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Folder01
-import me.rerere.hugeicons.stroke.Python
-import me.rerere.hugeicons.stroke.Terminal
-import me.rerere.hugeicons.stroke.TerminalSquare
+import me.rerere.hugeicons.stroke.Bash
+import me.rerere.hugeicons.stroke.ComputerTerminal01
+import me.rerere.hugeicons.stroke.Settings03
+import me.rerere.hugeicons.stroke.Wrench01
+import me.rerere.hugeicons.stroke.Codesandbox
 import me.rerere.hugeicons.stroke.Tools
 import me.rerere.rikkahub.data.localtools.LocalToolStatus
 import me.rerere.rikkahub.data.localtools.LocalToolType
@@ -96,7 +98,7 @@ fun LocalToolsPage(vm: LocalToolsVM = koinViewModel()) {
                     )
                     item(
                         onClick = { vm.toggleTool(LocalToolType.SSH, state.tools[LocalToolType.SSH] != LocalToolStatus.INSTALLED) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Terminal, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(toolStatusText(state, LocalToolType.SSH)) },
                         headlineContent = { Text("OpenSSH") },
                         trailingContent = {
@@ -112,7 +114,7 @@ fun LocalToolsPage(vm: LocalToolsVM = koinViewModel()) {
                     )
                     item(
                         onClick = { vm.toggleTool(LocalToolType.PYTHON, state.tools[LocalToolType.PYTHON] != LocalToolStatus.INSTALLED) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Python, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Bash, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(toolStatusText(state, LocalToolType.PYTHON)) },
                         headlineContent = { Text("Python") },
                         trailingContent = {
@@ -137,19 +139,19 @@ fun LocalToolsPage(vm: LocalToolsVM = koinViewModel()) {
                 ) {
                     item(
                         onClick = { vm.setShellMode(ShellMode.NORMAL) },
-                        leadingContent = { CardGroupIcon(HugeIcons.TerminalSquare, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Settings03, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(if (state.selectedShellMode == ShellMode.NORMAL) "当前使用" else "普通 app 权限") },
                         headlineContent = { Text("普通权限") },
                     )
                     item(
                         onClick = { vm.setShellMode(ShellMode.ROOT) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Terminal, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Wrench01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(if (state.rootAvailable) "可用" else "不可用") },
                         headlineContent = { Text("Root 权限") },
                     )
                     item(
                         onClick = { vm.setShellMode(ShellMode.SHIZUKU) },
-                        leadingContent = { CardGroupIcon(HugeIcons.Terminal, containerColor = containerColor, contentColor = contentColor) },
+                        leadingContent = { CardGroupIcon(HugeIcons.Codesandbox, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(if (state.shizukuAvailable) "可用" else "不可用") },
                         headlineContent = { Text("Shizuku 权限") },
                     )
