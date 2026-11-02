@@ -56,6 +56,42 @@ jobs:
           "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Generate placeholder google-services.json
+        run: |
+          cat > app/google-services.json << 'JSON'
+          {
+            "project_info": {
+              "project_number": "123456789000",
+              "project_id": "rikkahub-local-tools",
+              "storage_bucket": "rikkahub-local-tools.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789000:android:0000000000000000000000",
+                  "android_client_info": {
+                    "package_name": "me.rerere.rikkahub"
+                  }
+                },
+                "oauth_client": [],
+                "api_key": [
+                  {
+                    "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": []
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
+          # debug 变体带 .debug 后缀，需要额外的 client
+          echo "google-services.json written"
+
       - name: Generate debug keystore and signing config
         run: |
           KEYSTORE="$PWD/app/debug.keystore"
