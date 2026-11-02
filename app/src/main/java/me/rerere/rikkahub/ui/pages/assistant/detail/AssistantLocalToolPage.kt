@@ -37,6 +37,7 @@ import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.Earth
 import me.rerere.hugeicons.stroke.Download01
+import me.rerere.hugeicons.stroke.Tools
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 import me.rerere.ui.toast.ToastType
