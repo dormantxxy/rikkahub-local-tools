@@ -58,7 +58,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.Screen
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
-import me.rerere.rikkahub.data.localtools.LINUX_PACKAGES
+import me.rerere.rikkahub.data.localtools.CLI_BUNDLES
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -121,8 +121,8 @@ private fun AssistantLocalToolContent(
     val scope = rememberCoroutineScope()
 
     val linuxEnv by toolsManager.linuxEnv.collectAsStateWithLifecycle()
-    val linuxPkgs by toolsManager.linuxPackages.collectAsStateWithLifecycle()
-    val installingLinuxPkg by toolsManager.installingLinuxPkg.collectAsStateWithLifecycle()
+    val bundleStates by toolsManager.bundleStates.collectAsStateWithLifecycle()
+    val installingBundles by toolsManager.installingBundles.collectAsStateWithLifecycle()
     val linuxPkgError by toolsManager.linuxPkgError.collectAsStateWithLifecycle()
     // 只支持 root / shizuku：无权限时 CLI 相关不可用
     var hasPriv by remember { mutableStateOf(false) }
@@ -131,7 +131,7 @@ private fun AssistantLocalToolContent(
     LaunchedEffect(Unit) {
         hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable()
         toolsManager.refreshPackages()
-        toolsManager.refreshLinuxPackages()
+        toolsManager.refreshBundles()
     }
 
     val calendarPermissionState = rememberPermissionState(
@@ -384,40 +384,43 @@ private fun AssistantLocalToolContent(
             }
         }
 
-        // ===== 可用 CLI 工具（入口常显，AI 也能看到） =====
-        CardGroup(title = { Text("可用 CLI 工具（在线安装，共 ${LINUX_PACKAGES.size} 个）") }) {
+        // ===== 工具扩展（每个 = 一套工具，一键安装） =====
+        CardGroup(title = { Text("工具扩展（${CLI_BUNDLES.size} 个，在线安装）") }) {
             if (!linuxEnv.installed) {
                 item(
                     headlineContent = { Text("请先安装上方的「完整 Linux 环境」") },
-                    supportingContent = { Text("装好后这些工具都能一键安装；AI 也可通过 run_cli_tool 直接调用") },
+                    supportingContent = { Text("装好后这里每个扩展都能一键安装；AI 也能通过 run_cli_tool 调用") },
                 )
             }
-                for (lp in LINUX_PACKAGES) {
-                    val installed = linuxPkgs[lp.pkg] == true
-                    val busy = lp.pkg in installingLinuxPkg
-                    item(
-                        headlineContent = { Text(lp.label) },
-                        supportingContent = { Text(if (busy) "安装中..." else lp.desc) },
-                        trailingContent = {
-                            when {
-                                busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                                installed -> Text("已安装", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                !hasPriv -> Text("不可用", style = MaterialTheme.typography.bodySmall)
-                                else -> FilledTonalButton(
-                                    enabled = linuxEnv.installed && hasPriv,
-                                    onClick = { scope.launch { toolsManager.installLinuxPackage(lp.pkg) } },
-                                ) { Text("安装") }
-                            }
-                        },
-                    )
-                }
-                linuxPkgError?.let { err ->
-                    item(
-                        headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
-                        trailingContent = { TextButton(onClick = { toolsManager.dismissErrors() }) { Text("关闭") } },
-                    )
-                }
+            for (b in CLI_BUNDLES) {
+                val installed = bundleStates[b.id] == true
+                val busy = b.id in installingBundles
+                item(
+                    headlineContent = { Text(b.label) },
+                    supportingContent = { Text(if (busy) "安装中..." else b.desc) },
+                    trailingContent = {
+                        when {
+                            busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
+                            installed -> Text(
+                                "已安装",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                            !hasPriv -> Text("不可用", style = MaterialTheme.typography.bodySmall)
+                            else -> FilledTonalButton(
+                                enabled = linuxEnv.installed && hasPriv,
+                                onClick = { scope.launch { toolsManager.installBundle(b.id) } },
+                            ) { Text("安装") }
+                        }
+                    },
+                )
+            }
+            linuxPkgError?.let { err ->
+                item(
+                    headlineContent = { Text(err, color = MaterialTheme.colorScheme.error) },
+                    trailingContent = { TextButton(onClick = { toolsManager.dismissErrors() }) { Text("关闭") } },
+                )
+            }
         }
-
     }
 }

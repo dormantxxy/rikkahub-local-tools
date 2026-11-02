@@ -1,13 +1,11 @@
 package me.rerere.rikkahub.data.localtools
 
 /**
- * 完整 Linux 环境（Alpine + APK 内置 proot）：
- * 全部走公共镜像在线下载，不需要任何自建/自托管资源。
+ * 完整 Linux 环境（Alpine + APK 内置 proot），全部走公共镜像。
  */
 object LinuxEnv {
     const val VERSION = "3.20.3"
 
-    /** 依次尝试的公共镜像 */
     val MIRRORS = listOf(
         "https://mirrors.aliyun.com/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
         "https://mirrors.tuna.tsinghua.edu.cn/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
@@ -20,76 +18,73 @@ object LinuxEnv {
     )
 }
 
-/** 环境里可一键安装的常用 CLI（apk 包名 → 显示） */
-data class LinuxPackage(val pkg: String, val label: String, val desc: String, val bin: String)
+/**
+ * 工具扩展（一套工具 = 一个 bundle，对应 MobiCode 的 extension 粒度）。
+ * 装的时候一次性 apk add 这组包。
+ */
+data class CliBundle(
+    val id: String,
+    val label: String,
+    val desc: String,
+    val pkgs: List<String>,
+    /** 用哪个命令判断已安装 */
+    val probe: String,
+)
 
-val LINUX_PACKAGES: List<LinuxPackage> = listOf(
-    LinuxPackage("build-base", "编译工具 (gcc/make)", "C/C++ 编译全套", "gcc"),
-    LinuxPackage("make", "make", "构建工具", "make"),
-    LinuxPackage("git", "Git", "版本控制", "git"),
-    LinuxPackage("python3", "Python 3", "脚本运行", "python3"),
-    LinuxPackage("py3-pip", "pip", "Python 包管理", "pip3"),
-    LinuxPackage("nodejs", "Node.js", "JS 运行时", "node"),
-    LinuxPackage("npm", "npm", "Node 包管理", "npm"),
-    LinuxPackage("ffmpeg", "FFmpeg", "音视频处理", "ffmpeg"),
-    LinuxPackage("openssh-client", "OpenSSH", "ssh/scp/sftp", "ssh"),
-    LinuxPackage("rsync", "rsync", "增量同步", "rsync"),
-    LinuxPackage("curl", "curl", "HTTP 工具", "curl"),
-    LinuxPackage("wget", "wget", "下载", "wget"),
-    LinuxPackage("jq", "jq", "JSON 处理", "jq"),
-    LinuxPackage("yq", "yq", "YAML 处理", "yq"),
-    LinuxPackage("vim", "vim", "编辑器", "vim"),
-    LinuxPackage("nano", "nano", "轻量编辑器", "nano"),
-    LinuxPackage("less", "less", "分页查看", "less"),
-    LinuxPackage("tree", "tree", "目录树", "tree"),
-    LinuxPackage("fzf", "fzf", "模糊搜索", "fzf"),
-    LinuxPackage("tmux", "tmux", "终端复用", "tmux"),
-    LinuxPackage("htop", "htop", "进程监控", "htop"),
-    LinuxPackage("procps", "ps/top", "进程工具", "ps"),
-    LinuxPackage("diffutils", "diff", "文件比较", "diff"),
-    LinuxPackage("patch", "patch", "打补丁", "patch"),
-    LinuxPackage("file", "file", "文件类型", "file"),
-    LinuxPackage("which", "which", "命令定位", "which"),
-    LinuxPackage("openssl", "openssl", "加密/证书", "openssl"),
-    LinuxPackage("zip", "zip", "压缩", "zip"),
-    LinuxPackage("unzip", "unzip", "解压", "unzip"),
-    LinuxPackage("sqlite", "SQLite", "sqlite3", "sqlite3"),
-    LinuxPackage("zstd", "zstd", "zstandard", "zstd"),
-    LinuxPackage("xz", "xz", "xz 压缩", "xz"),
-    LinuxPackage("tar", "tar", "归档", "tar"),
-    LinuxPackage("netcat-openbsd", "nc", "网络调试", "nc"),
-    LinuxPackage("bind-tools", "dig", "DNS 查询", "dig"),
-    LinuxPackage("traceroute", "traceroute", "路由追踪", "traceroute"),
-    LinuxPackage("imagemagick", "ImageMagick", "图像处理", "convert"),
-    LinuxPackage("ripgrep", "ripgrep (rg)", "高速搜索", "rg"),
-    LinuxPackage("fd", "fd", "快速找文件", "fd"),
-    LinuxPackage("bat", "bat", "带高亮 cat", "bat"),
-    LinuxPackage("git-lfs", "git-lfs", "大文件支持", "git-lfs"),
-    LinuxPackage("subversion", "svn", "Subversion", "svn"),
-    LinuxPackage("cmake", "cmake", "构建系统", "cmake"),
-    LinuxPackage("go", "Go", "Go 语言", "go"),
-    LinuxPackage("rust", "Rust", "Rust 工具链", "rustc"),
-    LinuxPackage("openjdk17-jdk", "JDK 17", "Java 运行时/编译", "java"),
-    LinuxPackage("php83", "PHP 8.3", "PHP 解释器", "php"),
-    LinuxPackage("ruby", "Ruby", "Ruby 解释器", "ruby"),
-    LinuxPackage("perl", "Perl", "Perl 解释器", "perl"),
-    LinuxPackage("lua5.4", "Lua 5.4", "Lua 解释器", "lua5.4"),
-    LinuxPackage("aria2", "aria2", "多线程下载", "aria2c"),
-    LinuxPackage("yt-dlp", "yt-dlp", "视频下载", "yt-dlp"),
-    LinuxPackage("pandoc", "pandoc", "文档转换", "pandoc"),
-    LinuxPackage("poppler-utils", "poppler-utils", "PDF 工具 (pdftotext)", "pdftotext"),
-    LinuxPackage("tesseract-ocr", "tesseract", "OCR", "tesseract"),
-    LinuxPackage("7zip", "7z", "7z 压缩", "7z"),
-    LinuxPackage("duf", "duf", "磁盘用量", "duf"),
-    LinuxPackage("ncdu", "ncdu", "目录占用分析", "ncdu"),
-    LinuxPackage("lsof", "lsof", "打开的文件", "lsof"),
-    LinuxPackage("strace", "strace", "系统调用跟踪", "strace"),
-    LinuxPackage("gdb", "gdb", "调试器", "gdb"),
-    LinuxPackage("nmap", "nmap", "端口扫描", "nmap"),
-    LinuxPackage("socat", "socat", "网络转发", "socat"),
-    LinuxPackage("whois", "whois", "域名查询", "whois"),
-    LinuxPackage("nginx", "nginx", "Web 服务器", "nginx"),
-    LinuxPackage("redis", "redis", "Redis 客户端", "redis-cli"),
-    LinuxPackage("postgresql16-client", "psql", "PostgreSQL 客户端", "psql"),
-    LinuxPackage("mariadb-client", "mariadb", "MySQL 客户端", "mariadb"),
+val CLI_BUNDLES: List<CliBundle> = listOf(
+    CliBundle(
+        "dev", "开发基础",
+        "git · gcc · make · cmake",
+        listOf("git", "build-base", "make", "cmake"), "git",
+    ),
+    CliBundle(
+        "python", "Python",
+        "python3 · pip",
+        listOf("python3", "py3-pip"), "python3",
+    ),
+    CliBundle(
+        "node", "Node.js",
+        "node · npm",
+        listOf("nodejs", "npm"), "node",
+    ),
+    CliBundle(
+        "net", "网络工具",
+        "curl · wget · ssh · rsync · nc · dig",
+        listOf("curl", "wget", "openssh-client", "rsync", "netcat-openbsd", "bind-tools"), "ssh",
+    ),
+    CliBundle(
+        "text", "文本处理",
+        "vim · nano · less · jq · yq · tree · fzf",
+        listOf("vim", "nano", "less", "jq", "yq", "tree", "fzf"), "jq",
+    ),
+    CliBundle(
+        "sys", "系统监控",
+        "htop · procps · lsof · strace · duf · ncdu",
+        listOf("htop", "procps", "lsof", "strace", "duf", "ncdu"), "htop",
+    ),
+    CliBundle(
+        "media", "媒体处理",
+        "ffmpeg · imagemagick",
+        listOf("ffmpeg", "imagemagick"), "ffmpeg",
+    ),
+    CliBundle(
+        "archive", "压缩解压",
+        "zip · unzip · 7z · zstd · xz · tar",
+        listOf("zip", "unzip", "7zip", "zstd", "xz", "tar"), "zip",
+    ),
+    CliBundle(
+        "lang", "语言运行时",
+        "go · rust · java · php · ruby · perl · lua",
+        listOf("go", "rust", "openjdk17-jdk", "php83", "ruby", "perl", "lua5.4"), "go",
+    ),
+    CliBundle(
+        "db", "数据库客户端",
+        "sqlite3 · psql · mariadb · redis-cli",
+        listOf("sqlite", "postgresql16-client", "mariadb-client", "redis"), "sqlite3",
+    ),
+    CliBundle(
+        "ops", "运维与下载",
+        "tmux · aria2 · yt-dlp · pandoc · nmap · socat",
+        listOf("tmux", "aria2", "yt-dlp", "pandoc", "nmap", "socat"), "tmux",
+    ),
 )
