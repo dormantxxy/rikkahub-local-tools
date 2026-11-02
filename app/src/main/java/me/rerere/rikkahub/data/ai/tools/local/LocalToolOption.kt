@@ -52,4 +52,16 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("web_fetch")
     data object WebFetch : LocalToolOption()
+
+    @Serializable
+    @SerialName("search_code")
+    data object SearchCode : LocalToolOption()
+
+    @Serializable
+    @SerialName("file_tree")
+    data object FileTree : LocalToolOption()
+
+    @Serializable
+    @SerialName("tasks")
+    data object Tasks : LocalToolOption()
 }

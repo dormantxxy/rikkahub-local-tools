@@ -178,6 +178,9 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 自动化
         json(AUTOMATION_CONFIG, Settings::automationConfig) { copy(automationConfig = it) },
+
+        // 当前项目
+        plain(PROJECT_PATH, Settings::projectPath) { copy(projectPath = it) },
     )
 }
 

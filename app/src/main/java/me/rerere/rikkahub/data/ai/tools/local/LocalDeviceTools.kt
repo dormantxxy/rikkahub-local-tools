@@ -11,6 +11,7 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
@@ -20,7 +21,7 @@ import me.rerere.rikkahub.data.localtools.shellQuote
  * 权限自动按 root > shizuku > 普通 选择。
  */
 
-internal fun buildRunShellTool(executor: ShellExecutor): Tool = Tool(
+internal fun buildRunShellTool(executor: ShellExecutor, settingsStore: SettingsStore): Tool = Tool(
     name = "run_shell_command",
     description = """
         Execute a shell command on the Android device and return stdout/stderr/exit code.
@@ -46,11 +47,13 @@ internal fun buildRunShellTool(executor: ShellExecutor): Tool = Tool(
             required = listOf("command")
         )
     },
+    needsApproval = { args -> isDangerousCommand(args.toString()) },
     execute = {
         val params = it.jsonObject
         val command = params["command"]?.jsonPrimitive?.contentOrNull
             ?: error("command is required")
-        val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull
+        val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { null }
         val timeoutMs = (
             params["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000)
                 ?: 60_000.0
@@ -68,7 +71,7 @@ internal fun buildRunShellTool(executor: ShellExecutor): Tool = Tool(
     }
 )
 
-internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
+internal fun buildManageFilesTool(executor: ShellExecutor, settingsStore: SettingsStore): Tool = Tool(
     name = "manage_files",
     description = """
         Manage files on the Android device filesystem. Actions:
@@ -115,6 +118,12 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
             },
             required = listOf("action")
         )
+    },
+    needsApproval = { args ->
+        val o = runCatching { args.jsonObject }.getOrNull()
+        val act = o?.get("action")?.jsonPrimitive?.contentOrNull
+        val pth = o?.get("path")?.jsonPrimitive?.contentOrNull ?: ""
+        act == "delete" && (pth == "/" || pth.startsWith("/system") || pth.startsWith("/data") || pth.startsWith("/sdcard") && pth.count { it == '/' } <= 1)
     },
     execute = {
         val params = it.jsonObject
@@ -192,7 +201,7 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
     }
 )
 
-internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager): Tool = Tool(
+internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsManager, settingsStore: SettingsStore): Tool = Tool(
     name = "run_cli_tool",
     description = """
         Run a command-line tool (git, python3, pip, ssh, curl, etc.) on the device.
@@ -218,11 +227,13 @@ internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsMa
             required = listOf("command")
         )
     },
+    needsApproval = { args -> isDangerousCommand(args.toString()) },
     execute = {
         val params = it.jsonObject
         val command = params["command"]?.jsonPrimitive?.contentOrNull
             ?: error("command is required")
-        val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull
+        val cwd = params["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?: settingsStore.settingsFlow.value.projectPath.ifBlank { null }
         val timeoutMs = (
             params["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000)
                 ?: 120_000.0
@@ -240,3 +251,14 @@ internal fun buildRunCliTool(executor: ShellExecutor, toolsManager: LocalToolsMa
         listOf(UIMessagePart.Text(payload.toString()))
     }
 )
+
+/** 危险命令检测：命中需要用户二次确认 */
+private val DANGEROUS_PATTERNS = listOf(
+    "rm -rf /", "rm -rf /*", "mkfs", "dd if=", "> /dev/block", "format ", "reboot", "shutdown ",
+    "pm uninstall", "> /system", "chmod -r 777 /", "fastboot", "wipe ", ":(){", "mv /*",
+)
+
+internal fun isDangerousCommand(text: String): Boolean {
+    val t = text.lowercase()
+    return DANGEROUS_PATTERNS.any { t.contains(it) }
+}

@@ -86,6 +86,8 @@ data class Settings(
     val sponsorAlertDismissedAt: Int = 0,
     val localToolsConfig: LocalToolsConfig = LocalToolsConfig(),
     val automationConfig: AutomationConfig = AutomationConfig(),
+    /** 当前项目目录（AI 工具的默认 cwd） */
+    val projectPath: String = "",
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

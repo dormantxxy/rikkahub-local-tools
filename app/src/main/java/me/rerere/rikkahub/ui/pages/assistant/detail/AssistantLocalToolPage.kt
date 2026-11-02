@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,6 +44,8 @@ import me.rerere.hugeicons.stroke.ClipboardPaste
 import me.rerere.hugeicons.stroke.Clock01
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Earth
+import me.rerere.hugeicons.stroke.Code
+import me.rerere.hugeicons.stroke.CheckList
 import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.JavaScript
 import me.rerere.hugeicons.stroke.MessageQuestion
@@ -124,8 +128,12 @@ private fun AssistantLocalToolContent(
     val packageMessages by toolsManager.packageMessages.collectAsStateWithLifecycle()
     val packageError by toolsManager.packageError.collectAsStateWithLifecycle()
     val navController = LocalNavController.current
+    val settingsStore: SettingsStore = koinInject()
+    val settings by settingsStore.settingsFlow.collectAsStateWithLifecycle()
+    var projectInput by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { toolsManager.refreshPackages() }
+    LaunchedEffect(settings.projectPath) { projectInput = settings.projectPath }
 
     val calendarPermissionState = rememberPermissionState(
         permissions = setOf(
@@ -301,6 +309,66 @@ private fun AssistantLocalToolContent(
                 icon = HugeIcons.Earth,
                 title = "网页浏览",
                 description = "抓取网页/接口（GET/POST/headers）返回可读文本，无需前台渲染",
+            )
+            toolItemStr(
+                option = LocalToolOption.SearchCode,
+                icon = HugeIcons.Code,
+                title = "代码检索",
+                description = "在项目里按关键字搜索，返回 文件:行:内容",
+            )
+            toolItemStr(
+                option = LocalToolOption.FileTree,
+                icon = HugeIcons.FolderOpen,
+                title = "文件树",
+                description = "列出项目目录结构，便于 AI 快速定位文件",
+            )
+            toolItemStr(
+                option = LocalToolOption.Tasks,
+                icon = HugeIcons.CheckList,
+                title = "任务计划",
+                description = "AI 可拆解任务并勾选进度（侧滑栏「任务计划」可查看）",
+            )
+        }
+
+        // ===== 项目 =====
+        CardGroup(title = { Text("项目") }) {
+            formItem {
+                Text(
+                    "当前项目目录（AI 的 shell/文件/CLI 工具默认在此工作）",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Row(
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    OutlinedTextField(
+                        value = projectInput,
+                        onValueChange = { projectInput = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("/storage/emulated/0/…") },
+                        singleLine = true,
+                    )
+                    TextButton(
+                        onClick = {
+                            scope.launch { settingsStore.update { it.copy(projectPath = projectInput.trim()) } }
+                        },
+                    ) { Text("应用") }
+                }
+            }
+            item(
+                headlineContent = {
+                    Text(if (settings.projectPath.isBlank()) "未设置项目（默认 /storage/emulated/0）" else settings.projectPath)
+                },
+                supportingContent = { Text("选中后 AI 工具在 this 目录下工作") },
+            )
+            item(
+                headlineContent = {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { projectInput = "/storage/emulated/0/MobiCode Studio/Projects" }) { Text("Projects") }
+                        TextButton(onClick = { projectInput = "/storage/emulated/0/Download" }) { Text("Download") }
+                        TextButton(onClick = { projectInput = ""; scope.launch { settingsStore.update { it.copy(projectPath = "") } } }) { Text("清空") }
+                    }
+                },
             )
         }
 

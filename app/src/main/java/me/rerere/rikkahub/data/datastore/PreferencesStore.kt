@@ -189,6 +189,9 @@ class SettingsStore internal constructor(
         // 自动化
         val AUTOMATION_CONFIG = stringPreferencesKey("automation_config")
 
+        // 当前项目
+        val PROJECT_PATH = stringPreferencesKey("project_path")
+
         // Uses the same DataStore singleton without starting settings flows or requiring Koin.
         internal suspend fun restoreBeforeInitialization(context: Context, settings: Settings, launchCount: Int) {
             require(!settings.init) { "Cannot restore uninitialized settings" }

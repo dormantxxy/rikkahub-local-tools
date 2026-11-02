@@ -58,6 +58,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.CheckList
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
@@ -446,6 +447,18 @@ fun ChatDrawerContent(
                     },
                     onClick = {
                         navController.navigate(Screen.Stats)
+                    },
+                )
+
+                DrawerAction(
+                    icon = {
+                        Icon(HugeIcons.CheckList, "任务计划")
+                    },
+                    label = {
+                        Text("任务计划")
+                    },
+                    onClick = {
+                        navController.navigate(Screen.TaskPlan)
                     },
                 )
 
