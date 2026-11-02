@@ -384,9 +384,14 @@ private fun AssistantLocalToolContent(
             }
         }
 
-        // ===== 环境内软件包 =====
-        if (linuxEnv.installed) {
-            CardGroup(title = { Text("安装软件包（apk，任意包可用）") }) {
+        // ===== 可用 CLI 工具（入口常显，AI 也能看到） =====
+        CardGroup(title = { Text("可用 CLI 工具（在线安装，共 ${LINUX_PACKAGES.size} 个）") }) {
+            if (!linuxEnv.installed) {
+                item(
+                    headlineContent = { Text("请先安装上方的「完整 Linux 环境」") },
+                    supportingContent = { Text("装好后这些工具都能一键安装；AI 也可通过 run_cli_tool 直接调用") },
+                )
+            }
                 for (lp in LINUX_PACKAGES) {
                     val installed = linuxPkgs[lp.pkg] == true
                     val busy = lp.pkg in installingLinuxPkg
@@ -398,7 +403,10 @@ private fun AssistantLocalToolContent(
                                 busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp))
                                 installed -> Text("已安装", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                                 !hasPriv -> Text("不可用", style = MaterialTheme.typography.bodySmall)
-                                else -> FilledTonalButton(onClick = { scope.launch { toolsManager.installLinuxPackage(lp.pkg) } }) { Text("安装") }
+                                else -> FilledTonalButton(
+                                    enabled = linuxEnv.installed && hasPriv,
+                                    onClick = { scope.launch { toolsManager.installLinuxPackage(lp.pkg) } },
+                                ) { Text("安装") }
                             }
                         },
                     )
@@ -409,7 +417,6 @@ private fun AssistantLocalToolContent(
                         trailingContent = { TextButton(onClick = { toolsManager.dismissErrors() }) { Text("关闭") } },
                     )
                 }
-            }
         }
 
     }
