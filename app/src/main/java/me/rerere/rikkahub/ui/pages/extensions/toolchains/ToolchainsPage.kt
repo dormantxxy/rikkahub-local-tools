@@ -435,9 +435,16 @@ private fun StoreCard(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // 版本选择：始终可点击选择（Termux 包也显示当前版本）
-                    Box {
+                    // 版本号最多显示 20 字符，避免超长版本把右侧卸载按钮顶走
+                    Box(modifier = Modifier.weight(1f, fill = false)) {
                         TextButton(onClick = { versionMenuExpanded = true }, enabled = !busy) {
-                            Text("版本：v$selectedVersion ▾", style = MaterialTheme.typography.labelSmall)
+                            val versionText = if (selectedVersion.length > 20) selectedVersion.take(20) + "…" else selectedVersion
+                            Text(
+                                "版本：v$versionText ▾",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                         DropdownMenu(
                             expanded = versionMenuExpanded,

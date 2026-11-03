@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.localtools
 
 import android.content.Context
+import me.rerere.common.android.appTempFolder
 import java.io.File
 import java.io.InputStream
 import java.net.HttpURLConnection
@@ -180,7 +181,7 @@ class ExtensionInstaller(
             // 2) 安装自身
             Result.success(installSingle(entry, onUpdate).getOrThrow())
         } catch (e: CancellationException) {
-            File(extRoot, "_tmp_${entry.id}").deleteRecursively()
+            File(context.appTempFolder, "ext_${entry.id}").deleteRecursively()
             throw e
         } catch (e: Throwable) {
             Result.failure(e)
@@ -218,7 +219,7 @@ class ExtensionInstaller(
         onUpdate: (InstallUpdate) -> Unit,
     ): Result<InstalledRecord> = try {
         extRoot.mkdirs()
-        val workDir = File(extRoot, "_tmp_${entry.id}")
+        val workDir = File(context.appTempFolder, "ext_${entry.id}")
         workDir.mkdirs()
         val isDeb = entry.format.equals("deb", ignoreCase = true)
         val archiveName = if (isDeb) "archive.deb" else "archive.mcext"

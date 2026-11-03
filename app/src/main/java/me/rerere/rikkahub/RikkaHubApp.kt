@@ -206,9 +206,21 @@ class RikkaHubApp : Application() {
 
     private fun deleteTempFiles() {
         get<AppScope>().launch(Dispatchers.IO) {
-            val dir = appTempFolder
-            if (dir.exists()) {
-                dir.deleteRecursively()
+            runCatching {
+                val dir = appTempFolder
+                if (dir.exists()) {
+                    // 只清理 App 自己生成的临时文件，避免误删用户放在公共 tmp 里的东西
+                    dir.listFiles()?.forEach { f ->
+                        val n = f.name
+                        if (n.startsWith("ext_") || n.startsWith("crop_output_") ||
+                            n.startsWith("imggen_ref_") || n.startsWith("tts_")
+                        ) {
+                            f.deleteRecursively()
+                        }
+                    }
+                }
+                // 旧版本私有缓存目录
+                File(cacheDir, "temp").deleteRecursively()
             }
         }
     }

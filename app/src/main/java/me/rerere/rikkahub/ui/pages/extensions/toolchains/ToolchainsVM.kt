@@ -286,7 +286,7 @@ class ToolchainsVM(
         _progress.value = null
         if (id != null) {
             viewModelScope.launch(Dispatchers.IO) {
-                File(context.filesDir, "extensions/_tmp_$id").deleteRecursively()
+                File(context.appTempFolder, "ext_$id").deleteRecursively()
                 _message.value = "已取消安装"
             }
         }
