@@ -8,7 +8,10 @@ import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 
 class WorkspaceManager(
+    /** 工作区文件根目录（支持外部存储，如 /storage/emulated/0/RikkaHub/workspaces） */
     private val baseDir: File,
+    /** Rootfs 与临时目录根目录（必须在私有目录，FUSE 不支持符号链接/权限） */
+    private val rootfsBaseDir: File = baseDir,
     private val config: WorkspaceConfig = WorkspaceConfig(),
     private val shellRunner: WorkspaceShellRunner = HostShellRunner(),
     private val bindMounts: List<WorkspaceBindMount> = emptyList(),
@@ -26,6 +29,7 @@ class WorkspaceManager(
 
     init {
         baseDir.mkdirs()
+        rootfsBaseDir.mkdirs()
     }
 
     fun backend(root: String, shellCompatibilityMode: Boolean = false): WorkspaceBackend =
@@ -39,6 +43,21 @@ class WorkspaceManager(
         return dir
     }
 
+    /** 旧版私有目录中是否还有待迁移的工作区文件。 */
+    fun hasLegacyFiles(root: String): Boolean = File(File(rootfsBaseDir, root), FILES_DIR).exists()
+
+    /** 迁移旧版私有目录中的工作区文件到外部目录（每工作区只执行一次）。 */
+    fun migrateLegacyFiles(root: String) {
+        val legacy = File(File(rootfsBaseDir, root), FILES_DIR)
+        val target = filesDir(root)
+        if (!legacy.exists() || target.exists()) return
+        runCatching {
+            target.parentFile?.mkdirs()
+            legacy.copyRecursively(target, overwrite = false)
+            legacy.deleteRecursively()
+        }
+    }
+
     fun workspaceDir(root: String): File {
         requireValidRoot(root)
         return File(baseDir, root)
@@ -46,15 +65,19 @@ class WorkspaceManager(
 
     fun filesDir(root: String): File = File(workspaceDir(root), FILES_DIR)
 
-    fun linuxDir(root: String): File = File(workspaceDir(root), LINUX_DIR)
+    fun linuxDir(root: String): File = File(rootfsBaseDir, "$root/$LINUX_DIR")
 
-    fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
+    fun tempDir(root: String): File = File(rootfsBaseDir, "$root/$TEMP_DIR")
 
     fun hasRootfs(root: String): Boolean = isUsableRootfs(linuxDir(root))
 
     fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
 
-    fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
+    fun deleteWorkspace(root: String): Boolean {
+        val filesDeleted = workspaceDir(root).deleteRecursively()
+        val rootfsDeleted = File(rootfsBaseDir, root).deleteRecursively()
+        return filesDeleted || rootfsDeleted
+    }
 
     fun listFiles(
         root: String,
@@ -261,7 +284,7 @@ class WorkspaceManager(
     }
 
     fun cleanupAllTempDirs() {
-        val roots = baseDir.listFiles()?.filter { it.isDirectory } ?: return
+        val roots = rootfsBaseDir.listFiles()?.filter { it.isDirectory } ?: return
         for (dir in roots) {
             val root = dir.name
             if (!root.matches(ROOT_NAME_REGEX)) continue

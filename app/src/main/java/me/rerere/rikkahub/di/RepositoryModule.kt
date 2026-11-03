@@ -17,6 +17,7 @@ import me.rerere.workspace.ProotShellRunner
 import me.rerere.workspace.RootfsInstaller
 import me.rerere.workspace.WorkspaceBindMount
 import me.rerere.workspace.WorkspaceManager
+import android.os.Environment
 import me.rerere.workspace.ssh.SshConnectionPool
 import org.koin.dsl.module
 import org.koin.dsl.onClose
@@ -58,7 +59,10 @@ val repositoryModule = module {
     single {
         val context: Context = get()
         WorkspaceManager(
-            baseDir = File(context.filesDir, "workspaces"),
+            // 工作区文件放外部存储（用户可见）：/storage/emulated/0/RikkaHub/workspaces/<id>/files
+            baseDir = File(Environment.getExternalStorageDirectory(), "RikkaHub/workspaces"),
+            // Rootfs / 临时目录必须留在私有目录（FUSE 不支持符号链接与执行权限）
+            rootfsBaseDir = File(context.filesDir, "workspaces"),
             shellRunner = ProotShellRunner(
                 nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
             ),
