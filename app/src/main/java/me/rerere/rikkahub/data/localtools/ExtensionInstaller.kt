@@ -201,6 +201,9 @@ class ExtensionInstaller(
         return result.values.toList()
     }
 
+    /** 版本目录名安全化：Termux 版本号可能含 epoch 冒号（如 1:3.6.5），冒号会破坏 LD_LIBRARY_PATH。 */
+    private fun safeVersionDirName(version: String): String = version.replace(":", "_")
+
     private suspend fun installSingle(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit,
@@ -219,7 +222,7 @@ class ExtensionInstaller(
             }
 
             // 2) 解压（实时进度）
-            val versionDir = File(extRoot, "${entry.id}/${entry.version}")
+            val versionDir = File(extRoot, "${entry.id}/${safeVersionDirName(entry.version)}")
             versionDir.deleteRecursively()
             val payloadDir = File(versionDir, "payload")
             payloadDir.mkdirs()

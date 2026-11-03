@@ -60,8 +60,6 @@
     android:theme="@style/Theme.Rikkahub"
     android:usesCleartextTraffic="true"
     tools:targetApi="33">
-    <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
-    <meta-data android:name="firebase_crashlytics_collection_enabled" android:value="false" />
     <activity
       android:name=".ui.activity.SafeModeActivity"
       android:exported="false"
