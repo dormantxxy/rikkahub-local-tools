@@ -167,7 +167,8 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading) onCancelClick() else onSendClick()
+        // 输入框有文字时：发送/加入队列；只有输入为空且正在生成时才停止
+        if (loading && state.isEmpty()) onCancelClick() else onSendClick()
     }
 
     // 回车发送：即使正在生成也加入队列，不停止生成
@@ -180,7 +181,7 @@ fun ChatInput(
     fun sendMessageWithoutAnswer() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading) onCancelClick() else onLongSendClick()
+        if (loading && state.isEmpty()) onCancelClick() else onLongSendClick()
     }
 
     val asr = LocalASRState.current
@@ -388,7 +389,8 @@ private fun SendButton(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val showStop = loading
+    // 输入框有文字时始终显示发送按钮（可发送/入队）；只有空输入且生成中才显示停止
+    val showStop = loading && empty
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
         empty -> MaterialTheme.colorScheme.surfaceContainerHigh

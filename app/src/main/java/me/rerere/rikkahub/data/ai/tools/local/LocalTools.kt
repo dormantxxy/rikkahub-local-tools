@@ -31,7 +31,7 @@ class LocalTools(
 
     // ===== 本地工具（设备 Shell / 文件 / 检索 / 文件树 / 网页浏览 / CLI 工具链） =====
     val runShellTool by lazy { buildRunShellTool(shellExecutor, defaultDir) }
-    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor) }
+    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, defaultDir) }
     val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, defaultDir) }
     val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, defaultDir) }
     val webFetchTool by lazy { buildWebFetchTool() }
@@ -55,7 +55,8 @@ class LocalTools(
         if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
         if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
-        if (options.contains(LocalToolOption.Cli)) tools.add(runCliTool)
+        // run_cli 依赖 root/Shizuku：读 App 启动时缓存的权限状态（轻量，不启动 su）
+        if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) tools.add(runCliTool)
         return tools
     }
 }

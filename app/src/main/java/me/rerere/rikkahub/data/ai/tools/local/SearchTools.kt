@@ -1,5 +1,6 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+import java.io.File
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -9,12 +10,14 @@ import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.rikkahub.data.localtools.shellQuote
 
-/** 代码检索：设备上 grep。 */
-internal fun buildSearchCodeTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(
+/**
+ * 代码检索：纯 Kotlin 文件遍历实现（不依赖系统 grep）。
+ * Android 的 toybox grep 在部分 ROM / FUSE 存储上会无输出或异常，改为 Java File API 保证 APK 内一致可用。
+ */
+internal fun buildSearchCodeTool(@Suppress("UNUSED_PARAMETER") executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "search_code",
-    description = "Search text across files on the device (grep). Params: pattern(required), path(default app dir), include(glob like *.kt), max_results(default 100), case_sensitive(default false).",
+    description = "Search text across files on the device (pure Kotlin, no system grep). Params: pattern(required, text or regex), path(default app dir), include(glob like *.kt), max_results(default 100), case_sensitive(default false).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -34,20 +37,17 @@ internal fun buildSearchCodeTool(executor: ShellExecutor, defaultDir: String): T
         val include = p["include"]?.jsonPrimitive?.contentOrNull
         val maxResults = (p["max_results"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 100).coerceIn(1, 500)
         val caseSensitive = p["case_sensitive"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-        val flags = if (caseSensitive) "-rn" else "-rni"
-        val inc = if (include.isNullOrBlank()) "" else "--include=${include.shellQuote()} "
-        val cmd = "grep $flags $inc-- ${pattern.shellQuote()} ${path.shellQuote()} 2>/dev/null | head -$maxResults"
-        val r = executor.execute(cmd, timeoutMillis = 120_000, mode = executor.preferredMode())
+        val output = searchFiles(path, pattern, include, maxResults, caseSensitive)
         listOf(UIMessagePart.Text(buildJsonObject {
-            put("pattern", pattern); put("path", path); put("exit_code", r.exitCode); put("output", r.stdout.take(60_000))
+            put("pattern", pattern); put("path", path); put("output", output.take(60_000))
         }.toString()))
     }
 )
 
-/** 文件树。 */
-internal fun buildFileTreeTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(
+/** 文件树：纯 Kotlin 实现（不依赖 shell find）。 */
+internal fun buildFileTreeTool(@Suppress("UNUSED_PARAMETER") executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "list_file_tree",
-    description = "List a directory tree on the device. Params: path(default app dir), depth(default 3), max_entries(default 300).",
+    description = "List a directory tree on the device (pure Kotlin). Params: path(default app dir), depth(default 3), max_entries(default 300).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -62,10 +62,94 @@ internal fun buildFileTreeTool(executor: ShellExecutor, defaultDir: String): Too
         val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() } ?: defaultDir
         val depth = (p["depth"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 3).coerceIn(1, 10)
         val maxEntries = (p["max_entries"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 300).coerceIn(1, 2000)
-        val cmd = "find ${path.shellQuote()} -maxdepth $depth -not -path '*/.git/*' 2>/dev/null | head -$maxEntries"
-        val r = executor.execute(cmd, timeoutMillis = 60_000, mode = executor.preferredMode())
+        val output = listTree(path, depth, maxEntries)
         listOf(UIMessagePart.Text(buildJsonObject {
-            put("path", path); put("output", (r.stdout.ifBlank { r.stderr }).take(60_000))
+            put("path", path); put("output", output.take(60_000))
         }.toString()))
     }
 )
+
+/** 遍历目录、按 include glob 过滤并正则匹配行。 */
+internal fun searchFiles(
+    rootPath: String,
+    pattern: String,
+    include: String?,
+    maxResults: Int,
+    caseSensitive: Boolean,
+): String {
+    val root = File(rootPath)
+    if (!root.exists()) return "路径不存在：$rootPath"
+    if (!root.isDirectory) return "不是目录：$rootPath"
+    val regex = try {
+        if (caseSensitive) Regex(pattern) else Regex(pattern, RegexOption.IGNORE_CASE)
+    } catch (e: Exception) {
+        return "正则表达式错误：${e.message}"
+    }
+    val includeRegex = include?.takeIf { it.isNotBlank() }?.let { globToRegex(it) }
+    val results = mutableListOf<String>()
+    var scanned = 0
+    val maxFileSize = 2L * 1024 * 1024
+    try {
+        for (file in root.walkTopDown().onEnter { shouldEnter(it) }) {
+            if (results.size >= maxResults) break
+            if (!file.isFile || file.length() > maxFileSize) continue
+            if (includeRegex != null && !includeRegex.matches(file.name)) continue
+            scanned++
+            try {
+                file.useLines { lines ->
+                    lines.forEachIndexed { index, line ->
+                        if (results.size < maxResults && regex.containsMatchIn(line)) {
+                            results.add("${file.path}:${index + 1}: ${line.take(300)}")
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+                // 跳过无法读取的文件
+            }
+        }
+    } catch (_: Exception) {
+        // 遍历异常时返回已收集结果
+    }
+    return if (results.isEmpty()) "未找到匹配（扫描 $scanned 个文件）" else results.joinToString("\n")
+}
+
+/** 遍历目录树（带缩进）。 */
+internal fun listTree(rootPath: String, depth: Int, maxEntries: Int): String {
+    val root = File(rootPath)
+    if (!root.exists()) return "路径不存在：$rootPath"
+    if (!root.isDirectory) return "不是目录：$rootPath"
+    val sb = StringBuilder()
+    var count = 0
+    val rootDepth = root.absolutePath.count { it == '/' }
+    try {
+        for (f in root.walkTopDown().maxDepth(depth).onEnter { shouldEnter(it) }) {
+            if (count >= maxEntries) break
+            count++
+            val relDepth = f.absolutePath.count { it == '/' } - rootDepth
+            val indent = "  ".repeat(relDepth.coerceAtLeast(0))
+            sb.append(indent).append(if (f.isDirectory) "[${f.name}]" else f.name).append('\n')
+        }
+    } catch (_: Exception) {
+    }
+    return sb.toString().ifBlank { "(空目录)" }
+}
+
+/** 跳过 VCS/构建产物目录，避免搜索噪音与卡顿。 */
+private fun shouldEnter(dir: File): Boolean {
+    val name = dir.name
+    return name != ".git" && name != "node_modules" && name != "build" && name != ".gradle" && name != ".kotlin"
+}
+
+/** 简单 glob -> Regex（* 与 ?）。 */
+private fun globToRegex(glob: String): Regex {
+    val sb = StringBuilder()
+    for (ch in glob) {
+        when (ch) {
+            '*' -> sb.append(".*")
+            '?' -> sb.append('.')
+            '.', '(', ')', '[', ']', '{', '}', '+', '^', '$', '|', '\\' -> sb.append('\\').append(ch)
+            else -> sb.append(ch)
+        }
+    }
+    return Regex(sb.toString(), RegexOption.IGNORE_CASE)
+}

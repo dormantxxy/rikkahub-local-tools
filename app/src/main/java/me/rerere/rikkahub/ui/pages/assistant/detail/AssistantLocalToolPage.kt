@@ -17,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -24,6 +25,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import me.rerere.ui.toast.ToastType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Calendar03
@@ -41,6 +44,7 @@ import me.rerere.hugeicons.stroke.SmartPhone01
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
+import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -55,6 +59,7 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
 import org.koin.androidx.compose.koinViewModel
+import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 @Composable
@@ -99,6 +104,21 @@ private fun AssistantLocalToolContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val toolchainExecutor: ToolchainExecutor = koinInject()
+    val shizukuGranted by me.rerere.rikkahub.data.localtools.ShizukuHelper.permissionGranted.collectAsStateWithLifecycle()
+    // 只在进入本页面时检测一次权限（不是每次 AI 请求都检测）
+    val hasPrivilege by produceState(initialValue = true, shizukuGranted) {
+        value = withContext(Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
+    }
+    // 进入页面时根据权限同步 CLI 开关：有权限自动开启，无权限自动移除（AI 不会发现该工具）
+    androidx.compose.runtime.LaunchedEffect(hasPrivilege) {
+        val contains = assistant.localTools.contains(LocalToolOption.Cli)
+        if (hasPrivilege && !contains) {
+            onUpdate(assistant.copy(localTools = assistant.localTools + LocalToolOption.Cli))
+        } else if (!hasPrivilege && contains) {
+            onUpdate(assistant.copy(localTools = assistant.localTools - LocalToolOption.Cli))
+        }
+    }
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
 
@@ -142,11 +162,13 @@ private fun AssistantLocalToolContent(
         icon: ImageVector,
         @StringRes title: Int,
         @StringRes description: Int,
+        enabled: Boolean = true,
     ) {
         val checked = assistant.localTools.contains(option)
         switchItem(
             checked = checked,
             onCheckedChange = { toggleLocalTool(option, it) },
+            enabled = enabled,
             // 图标底色跟着开关状态变化
             leadingContent = {
                 CardGroupIcon(
@@ -173,11 +195,13 @@ private fun AssistantLocalToolContent(
         icon: ImageVector,
         title: String,
         description: String,
+        enabled: Boolean = true,
     ) {
         val checked = assistant.localTools.contains(option)
         switchItem(
             checked = checked,
             onCheckedChange = { toggleLocalTool(option, it) },
+            enabled = enabled,
             leadingContent = {
                 CardGroupIcon(
                     icon = icon,
@@ -250,7 +274,14 @@ private fun AssistantLocalToolContent(
                 description = R.string.assistant_page_local_tools_chart_display_desc,
             )
             toolItemRaw(option = LocalToolOption.Shell, icon = HugeIcons.ComputerTerminal01, title = "设备 Shell", description = "在设备上执行 shell 命令（有 root 用 su）")
-            toolItemRaw(option = LocalToolOption.Cli, icon = HugeIcons.ComputerTerminal01, title = "CLI 工具链", description = "在原生工具链环境执行命令（git/python3/node/gcc/apktool/java…）")
+            toolItemRaw(
+                option = LocalToolOption.Cli,
+                icon = HugeIcons.ComputerTerminal01,
+                title = "CLI 工具链",
+                description = if (hasPrivilege) "在原生工具链环境执行命令（git/python3/node/gcc/apktool/java…）"
+                else "需要 root 或 Shizuku 权限（未授权时对 AI 不可见）",
+                enabled = hasPrivilege,
+            )
             toolItemRaw(option = LocalToolOption.Files, icon = HugeIcons.Package, title = "文件管理", description = "浏览/读写/复制/移动/删除/搜索文件")
             toolItemRaw(option = LocalToolOption.SearchCode, icon = HugeIcons.Code, title = "代码检索", description = "在目录里按关键字搜索文件内容")
             toolItemRaw(option = LocalToolOption.FileTree, icon = HugeIcons.FolderOpen, title = "文件树", description = "列出目录结构")

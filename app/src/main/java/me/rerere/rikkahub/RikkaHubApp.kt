@@ -29,6 +29,7 @@ import me.rerere.rikkahub.data.ai.MemoryConsolidationScheduler
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.localtools.ShizukuHelper
+import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.shizuku.ShizukuShellManager
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.remote.ModelsDevUpdater
@@ -88,6 +89,10 @@ class RikkaHubApp : Application() {
         runCatching { ShizukuHelper.ensureListeners() }
         // 初始化 Shizuku UserService（在 Shizuku root 进程中执行 shell，替代已私有的 Shizuku.newProcess）
         runCatching { ShizukuShellManager.install(this) }
+        // 每次打开 App 轻量检查一次 root 状态并缓存（之后各处只读缓存，不再启动 su）
+        get<AppScope>().launch(Dispatchers.IO) {
+            runCatching { get<ShellExecutor>().refreshPrivilegeCache() }
+        }
 
         // set cursor window size to 32MB
         DatabaseUtil.setCursorWindowSize(32 * 1024 * 1024)

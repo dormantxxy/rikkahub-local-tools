@@ -287,9 +287,12 @@ private fun StoreCard(
                 }
                 if (ext.depends.isNotEmpty()) {
                     Text(
-                        "依赖 ${ext.depends.size} 个包，安装时自动安装",
+                        "依赖 ${ext.depends.size} 个包：" + ext.depends.take(4).joinToString("、") +
+                            if (ext.depends.size > 4) " 等，安装时自动安装" else "，安装时自动安装",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 if (progress != null) {

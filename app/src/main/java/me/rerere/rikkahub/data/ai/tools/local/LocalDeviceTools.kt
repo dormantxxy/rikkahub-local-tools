@@ -46,7 +46,7 @@ internal fun buildRunShellTool(executor: ShellExecutor, defaultDir: String): Too
 )
 
 /** 文件管理（list/read/write/delete/mkdir/copy/move/exists/search/info）。 */
-internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
+internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "manage_files",
     description = "Manage files on the Android device. Actions: list, read, write, delete, mkdir, copy, move, exists, search, info. Params: action(required), path, dst, content.",
     parameters = {
@@ -55,7 +55,7 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
                 put("action", buildJsonObject { put("type", "string"); put("description", "list|read|write|delete|mkdir|copy|move|exists|search|info") })
                 put("path", buildJsonObject { put("type", "string"); put("description", "Target path") })
                 put("dst", buildJsonObject { put("type", "string"); put("description", "Destination (copy/move)") })
-                put("content", buildJsonObject { put("type", "string"); put("description", "Text content (write)") })
+                put("content", buildJsonObject { put("type", "string"); put("description", "Text content (write) / search pattern") })
             },
             required = listOf("action"),
         )
@@ -68,6 +68,16 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
         val dst = p["dst"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
         val content = p["content"]?.jsonPrimitive?.contentOrNull
         val mode = executor.preferredMode()
+
+        if (action == "search") {
+            // search 用纯 Kotlin 实现（不依赖系统 grep）
+            val pattern = content ?: error("content/pattern required for search")
+            val searchPath = path ?: defaultDir
+            val output = searchFiles(searchPath, pattern, include = null, maxResults = 200, caseSensitive = false)
+            listOf(UIMessagePart.Text(buildJsonObject {
+                put("action", action); put("mode", "kotlin"); put("exit_code", 0); put("output", output.take(80_000))
+            }.toString()))
+        } else {
         val cmd: String = when (action) {
             "list" -> "ls -la ${(path ?: error("path is required for list")).shellQuote()} 2>&1"
             "read" -> "cat ${(path ?: error("path is required for read")).shellQuote()} 2>&1 | head -c 60000"
@@ -83,7 +93,6 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
             "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED"
             "move" -> "mv -f ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo MOVED"
             "exists" -> "test -e ${(path ?: error("path required")).shellQuote()} && echo YES || echo NO"
-            "search" -> "grep -rn ${(content ?: path ?: error("content/pattern required for search")).shellQuote()} ${(path ?: "/").shellQuote()} 2>/dev/null | head -200"
             "info" -> "ls -ld ${(path ?: error("path required for info")).shellQuote()} 2>&1"
             else -> error("unknown action: $action")
         }
@@ -91,5 +100,6 @@ internal fun buildManageFilesTool(executor: ShellExecutor): Tool = Tool(
         listOf(UIMessagePart.Text(buildJsonObject {
             put("action", action); put("mode", mode.name.lowercase()); put("exit_code", r.exitCode); put("output", r.output.take(80_000))
         }.toString()))
+        }
     }
 )

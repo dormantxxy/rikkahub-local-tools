@@ -46,12 +46,29 @@ class ShellExecutor(
             "/sbin:/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin"
     }
 
-    fun isRootAvailable(): Boolean = runCatching {
-        val p = ProcessBuilder("/system/bin/sh", "-c", "su -c id 2>/dev/null").redirectErrorStream(true).start()
-        p.outputStream.close()
-        val out = p.inputStream.bufferedReader().readText()
-        p.waitFor(8, TimeUnit.SECONDS) && out.contains("uid=0")
-    }.getOrDefault(false)
+    @Volatile private var rootChecked = false
+    @Volatile private var rootAvailable = false
+
+    /**
+     * 每次打开 App 调用一次（在后台线程）：轻量检查 root 并缓存。
+     * 之后所有工具/页面只读缓存，不再启动 su 进程。
+     */
+    @Synchronized
+    fun refreshPrivilegeCache() {
+        rootAvailable = runCatching {
+            val p = ProcessBuilder("/system/bin/sh", "-c", "su -c id 2>/dev/null").redirectErrorStream(true).start()
+            p.outputStream.close()
+            val out = p.inputStream.bufferedReader().readText()
+            p.waitFor(8, TimeUnit.SECONDS) && out.contains("uid=0")
+        }.getOrDefault(false)
+        rootChecked = true
+    }
+
+    /** 读缓存的 root 状态（未初始化时兜底检查一次）。 */
+    fun isRootAvailable(): Boolean {
+        if (!rootChecked) refreshPrivilegeCache()
+        return rootAvailable
+    }
 
     fun isShizukuAvailable(): Boolean = ShizukuHelper.isBinderAlive()
     fun isShizukuGranted(): Boolean = ShizukuHelper.hasPermission()
