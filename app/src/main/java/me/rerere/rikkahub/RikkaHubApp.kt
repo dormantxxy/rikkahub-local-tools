@@ -93,13 +93,22 @@ class RikkaHubApp : Application() {
         // 每次打开 App 轻量检查一次 root 状态并缓存（之后各处只读缓存，不再启动 su）
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching { get<ShellExecutor>().refreshPrivilegeCache() }
-            // Termux 编译的 git 硬编码了 /data/data/com.termux/files/usr/bin/sh，创建兼容链接
+            // Termux 包硬编码 /data/data/com.termux/files/usr/{bin/sh,etc/tls/cert.pem}，创建兼容链接
             runCatching {
                 val executor = get<ShellExecutor>()
                 val mode = executor.preferredMode()
-                if (mode != ShellMode.NORMAL && !File("/data/data/com.termux/files/usr/bin/sh").exists()) {
+                if (mode != ShellMode.NORMAL) {
+                    val caCert = File(filesDir, "extensions/termux.ca.certificates")
+                        .listFiles()?.sortedByDescending { it.name }
+                        ?.map { File(it, "payload/etc/tls/cert.pem") }
+                        ?.firstOrNull { it.isFile }
+                    val tlsPart = if (caCert != null) {
+                        " && ln -sf '" + caCert.absolutePath + "' /data/data/com.termux/files/usr/etc/tls/cert.pem"
+                    } else ""
                     executor.execute(
-                        "mkdir -p /data/data/com.termux/files/usr/bin && ln -sf /system/bin/sh /data/data/com.termux/files/usr/bin/sh",
+                        "mkdir -p /data/data/com.termux/files/usr/bin /data/data/com.termux/files/usr/etc/tls" +
+                            " && ln -sf /system/bin/sh /data/data/com.termux/files/usr/bin/sh" +
+                            " && ln -sf /system/bin/env /data/data/com.termux/files/usr/bin/env" + tlsPart,
                         timeoutMillis = 10_000,
                         mode = mode,
                     )
