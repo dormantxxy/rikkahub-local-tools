@@ -34,3 +34,9 @@ RikkaHub 3.1.1 增强版
 - 移除 Firebase Analytics/Crashlytics（不再出现 Enable Google Play services 通知）
 - 修复 run_shell_command 执行时无法停止的问题（Shizuku 执行可取消，停止立即生效）
 - GitHub 代理按实测排序（gh-proxy.com 优先），Termux 镜像按实测排序（中科大优先）
+
+最新版本更新：
+- 临时文件统一到 /storage/emulated/0/RikkaHub/tmp（普通权限自动回退 Android/data，不再散落）
+- 版本号显示限制 20 字符（超长省略，不顶走卸载/更新按钮）
+- 工具链修复：Git 优先使用 Termux Git 2.56（完整 remote helper），自动补 CURL_CA_BUNDLE/GIT_SSL_CAINFO（HTTPS 证书）
+- 内置 17 个扩展镜像到自建仓库 rikkahub-extensions（防源站失效）
