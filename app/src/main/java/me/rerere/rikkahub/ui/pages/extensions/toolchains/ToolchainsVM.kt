@@ -27,6 +27,29 @@ data class ToolchainItem(
     val installed: InstalledRecord?,
 ) {
     val isInstalled: Boolean get() = installed != null
+
+    /** 已安装且有新版本可更新。 */
+    val hasUpdate: Boolean get() = installed != null && compareVersions(ext.version, installed.version) > 0
+}
+
+/** 版本号比较（支持 epoch 如 1:0.16-1 与多段数字）。 */
+fun compareVersions(a: String, b: String): Int {
+    fun parse(v: String): Pair<Long, List<Long>> {
+        val epochMatch = Regex("^(\\d+):(.+)$").find(v)
+        val epoch = epochMatch?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+        val rest = epochMatch?.groupValues?.get(2) ?: v
+        val nums = Regex("\\d+").findAll(rest).map { it.value.toLongOrNull() ?: 0L }.toList()
+        return epoch to nums
+    }
+    val (epochA, numsA) = parse(a)
+    val (epochB, numsB) = parse(b)
+    if (epochA != epochB) return epochA.compareTo(epochB)
+    for (i in 0 until maxOf(numsA.size, numsB.size)) {
+        val x = numsA.getOrElse(i) { 0L }
+        val y = numsB.getOrElse(i) { 0L }
+        if (x != y) return x.compareTo(y)
+    }
+    return 0
 }
 
 data class InstallProgress(
@@ -37,6 +60,7 @@ data class InstallProgress(
     val extracted: Int = 0,
     val entries: Int = 0,
     val currentEntry: String? = null,
+    val dependencyNote: String? = null,
 ) {
     val percent: Int get() = when (phase) {
         InstallPhase.DOWNLOADING -> if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100) else 0
@@ -49,7 +73,7 @@ data class InstallProgress(
             val entry = currentEntry?.let { " · " + it.take(40) } ?: ""
             "解压中 ${percent}%  $extracted/$entries$entry"
         } else "解压中…"
-        InstallPhase.INSTALLING -> "安装中（赋权限/登记）…"
+        InstallPhase.INSTALLING -> dependencyNote ?: "安装中（赋权限/登记）…"
     }
 }
 
@@ -71,7 +95,18 @@ class ToolchainsVM(
     private val appEventBus: AppEventBus,
 ) : ViewModel() {
 
-    val extensions: List<ToolchainExtension> = MobiCodeCatalog.extensions(context)
+    /** 内置精选扩展（16 个，直接来自 assets）。 */
+    val builtIn: List<ToolchainExtension> = MobiCodeCatalog.extensions(context)
+
+    /** Termux 在线索引（约 3000+，运行时从镜像站拉取缓存）。 */
+    private val _termuxPackages = MutableStateFlow<List<ToolchainExtension>>(emptyList())
+    val termuxPackages: StateFlow<List<ToolchainExtension>> = _termuxPackages.asStateFlow()
+
+    private val _termuxLoading = MutableStateFlow(false)
+    val termuxLoading: StateFlow<Boolean> = _termuxLoading.asStateFlow()
+
+    private val _termuxError = MutableStateFlow<String?>(null)
+    val termuxError: StateFlow<String?> = _termuxError.asStateFlow()
 
     private val _progress = MutableStateFlow<InstallProgress?>(null)
     val progress: StateFlow<InstallProgress?> = _progress.asStateFlow()
@@ -82,70 +117,45 @@ class ToolchainsVM(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val emptyItems = extensions.map { ToolchainItem(it, null) }
+    private val _category = MutableStateFlow("全部")
+    val category: StateFlow<String> = _category.asStateFlow()
+
+    /** 每个扩展当前选中的版本（id -> version）。 */
+    private val _selectedVersions = MutableStateFlow<Map<String, String>>(emptyMap())
+    val selectedVersions: StateFlow<Map<String, String>> = _selectedVersions.asStateFlow()
 
     /**
-     * 主列表 = 内置目录 + 已安装但不在内置目录的包（远程安装的包追加到列表尾部）。
+     * 商店显示列表：
+     * - 搜索词为空：内置精选 16 个 + 已安装的额外包（按分类筛选）
+     * - 搜索词非空：搜索内置 + Termux 在线索引（搜到什么显示什么，按分类筛选）
      */
-    val items: StateFlow<List<ToolchainItem>> = combine(installer.installed, _query) { map, q ->
-        val localIds = extensions.map { it.id }.toSet()
-        val installedOnly = map.values
-            .filter { it.id !in localIds }
-            .sortedBy { it.installedAt }
-            .map { rec -> ToolchainItem(recordToExtension(rec), rec) }
-        val base = extensions.map { ToolchainItem(it, map[it.id]) } + installedOnly
-        if (q.isBlank()) base else base.filter { matches(it.ext, q) }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyItems)
-
-    // 远程搜索结果（镜像站目录），安装后加入列表尾部
-    private val _remoteResults = MutableStateFlow<List<ToolchainExtension>>(emptyList())
-    val remoteResults: StateFlow<List<ToolchainExtension>> = _remoteResults.asStateFlow()
-
-    private val _remoteLoading = MutableStateFlow(false)
-    val remoteLoading: StateFlow<Boolean> = _remoteLoading.asStateFlow()
-
-    private val _remoteCatalogReady = MutableStateFlow(false)
-    val remoteCatalogReady: StateFlow<Boolean> = _remoteCatalogReady.asStateFlow()
-
-    private var remoteCatalogJob: kotlinx.coroutines.Job? = null
-
-    fun searchRemote(query: String) {
-        if (query.isBlank()) {
-            _remoteResults.value = emptyList()
-            return
-        }
-        viewModelScope.launch {
-            _remoteLoading.value = true
-            try {
-                // 首次搜索时等待目录预热完成（只等一次）
-                if (!_remoteCatalogReady.value) {
-                    remoteCatalogJob?.join()
-                }
-                val results = MobiCodeCatalog.searchRemote(query, context)
-                val installedIds = installer.installed.value.keys
-                val localById = extensions.associateBy { it.id }
-                // 已安装的 -> 主列表尾部展示；本地目录中同版本 -> 主列表已展示；这里只显示新增/可升级的镜像包
-                _remoteResults.value = results.filter { r ->
-                    if (r.id in installedIds) return@filter false
-                    val local = localById[r.id]
-                    local == null || local.version != r.version
-                }
-            } finally {
-                _remoteLoading.value = false
+    val items: StateFlow<List<ToolchainItem>> =
+        combine(installer.installed, _query, _termuxPackages, _category) { map, q, termux, cat ->
+            val builtInIds = builtIn.map { it.id }.toSet()
+            val pool: List<ToolchainExtension> = if (q.isBlank()) {
+                builtIn + map.values
+                    .filter { it.id !in builtInIds }
+                    .sortedBy { it.installedAt }
+                    .map { recordToExtension(it) }
+            } else {
+                (builtIn + termux).filter { matches(it, q) }.distinctBy { it.id }
             }
-        }
-    }
+            val filtered = when (cat) {
+                "全部" -> pool
+                "精选" -> pool.filter { it.id in builtInIds }
+                "已安装" -> pool.filter { map.containsKey(it.id) }
+                else -> pool.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
+            }
+            filtered.map { ToolchainItem(it, map[it.id]) }
+        }.stateIn(viewModelScope, SharingStarted.Lazily, builtIn.map { ToolchainItem(it, null) })
 
     private val _privilege = MutableStateFlow(computePrivilege())
     val privilege: StateFlow<String> = _privilege.asStateFlow()
 
     init {
-        // 预热远程扩展目录缓存（打开页面时后台拉取全部扩展源，搜索时秒出）
-        remoteCatalogJob = viewModelScope.launch(Dispatchers.IO) {
-            runCatching { MobiCodeCatalog.fetchRemoteExtensions(context) }
-            _remoteCatalogReady.value = true
-        }
-        // 订阅 Shizuku 授权结果事件（RouteActivity 的权限回调），自动刷新权限状态
+        // 预加载 Termux 在线索引（打开商店即开始后台拉取，搜索时秒出）
+        ensureTermuxIndex()
+        // 订阅 Shizuku 授权结果事件，自动刷新权限状态
         viewModelScope.launch {
             appEventBus.events.collect { event ->
                 if (event is AppEvent.ShizukuPermissionUpdated) {
@@ -160,14 +170,41 @@ class ToolchainsVM(
         }
     }
 
+    /** 加载/刷新 Termux 在线索引。 */
+    fun ensureTermuxIndex(force: Boolean = false) {
+        if (_termuxLoading.value) return
+        if (!force && _termuxPackages.value.isNotEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _termuxLoading.value = true
+            _termuxError.value = null
+            runCatching { MobiCodeCatalog.ensureTermuxIndex(context, force) }
+                .onSuccess {
+                    _termuxPackages.value = it
+                    if (it.isEmpty()) _termuxError.value = "索引为空，请检查网络"
+                }
+                .onFailure { _termuxError.value = it.message ?: "加载扩展索引失败" }
+            _termuxLoading.value = false
+        }
+    }
+
     val privilegeAvailable: Boolean get() = _privilege.value == "root" || _privilege.value == "shizuku"
 
-    /** 查询指定扩展是否已安装（供远程搜索结果展示） */
     fun installedRecord(id: String): InstalledRecord? = installer.installed.value[id]
 
     fun setQuery(q: String) {
         _query.value = q
-        searchRemote(q)
+        if (q.isNotBlank() && _termuxPackages.value.isEmpty()) ensureTermuxIndex()
+    }
+
+    fun setCategory(cat: String) {
+        _category.value = cat
+    }
+
+    fun selectedVersion(ext: ToolchainExtension): String =
+        _selectedVersions.value[ext.id] ?: ext.availableVersions.first().version
+
+    fun selectVersion(ext: ToolchainExtension, version: String) {
+        _selectedVersions.value = _selectedVersions.value + (ext.id to version)
     }
 
     private fun matches(e: ToolchainExtension, q: String): Boolean =
@@ -187,6 +224,7 @@ class ToolchainsVM(
         repositoryUrl = "",
         licenseName = "",
         minimumAppVersion = 0,
+        format = rec.format,
     )
 
     private fun computePrivilege(): String = when {
@@ -203,27 +241,34 @@ class ToolchainsVM(
         viewModelScope.launch { delay(1500); refreshPrivilege() }
     }
 
+    /** 安装指定版本的扩展（自动安装依赖）。 */
     fun install(ext: ToolchainExtension) {
         if (_progress.value != null) return
+        val version = ext.availableVersions.firstOrNull { it.version == selectedVersion(ext) }
+            ?: ext.availableVersions.first()
+        val target = ext.copy(
+            version = version.version,
+            downloadUrl = version.downloadUrl,
+            sha256 = version.sha256,
+            downloadSize = version.downloadSize,
+            format = version.format,
+        )
         viewModelScope.launch {
             _message.value = null
-            val result = installer.install(ext) { upd ->
+            val result = installer.install(target) { upd ->
                 _progress.value = InstallProgress(
                     id = ext.id, phase = upd.phase,
                     downloaded = upd.downloaded, total = upd.total,
                     extracted = upd.extracted, entries = upd.entries,
                     currentEntry = upd.currentEntry,
+                    dependencyNote = upd.dependencyNote,
                 )
             }
             _progress.value = null
             _message.value = result.fold(
-                onSuccess = { "已安装 ${ext.name} ${ext.version}" },
+                onSuccess = { "已安装 ${ext.name} ${version.version}" },
                 onFailure = { "安装失败：${it.message ?: "未知错误"}" },
             )
-            if (result.isSuccess) {
-                // 安装完成后从搜索结果移除（会出现在主列表尾部）
-                _remoteResults.value = _remoteResults.value.filter { it.id != ext.id }
-            }
         }
     }
 

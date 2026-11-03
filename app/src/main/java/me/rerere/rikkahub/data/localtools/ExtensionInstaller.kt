@@ -2,9 +2,11 @@ package me.rerere.rikkahub.data.localtools
 
 import android.content.Context
 import java.io.File
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import java.util.zip.GZIPInputStream
 import java.util.zip.ZipFile
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.tukaani.xz.XZInputStream
 
 @Serializable
 data class InstalledRecord(
@@ -27,6 +30,8 @@ data class InstalledRecord(
     val description: String = "",
     val category: String = "",
     val downloadUrl: String = "",
+    /** mcext 或 deb */
+    val format: String = "mcext",
     /**
      * 安装时保存的扩展环境变量（照搬 MobiCode Studio 的 ExtensionEnvironmentGroup.variables）：
      * PATH / LD_LIBRARY_PATH / LIBRARY_PATH / CPATH / MOBICODE_SYSROOT
@@ -53,12 +58,19 @@ data class InstallUpdate(
     val entries: Int = 0,
     /** 解压阶段：当前正在解压的文件名（与工作区 rootfs 安装一致的实时体验）。 */
     val currentEntry: String? = null,
+    /** 依赖安装提示（如 "安装依赖 libssl（2/5）"）。 */
+    val dependencyNote: String? = null,
 )
 
 /**
- * 在线扩展安装器：下载 .mcext(ZIP) -> sha256 校验 -> 解压 payload/ -> 登记。
- * 下载源：国内镜像优先 + GitHub 直连兜底；每个候选 sha256 校验。
- * 通过 [install] 的 onUpdate 回调实时报告 下载/解压/安装 进度。
+ * 在线扩展安装器。
+ *
+ * 支持两种包格式：
+ * - .mcext（ZIP，MobiCode 工具链）：下载 -> sha256 校验 -> 解压 payload/ -> 登记
+ * - .deb（Termux 软件包）：下载 -> sha256 校验 -> 解析 ar/data.tar.xz -> 解压到 payload/ -> 登记
+ *
+ * 下载全部走国内镜像站（GitHub 镜像 / 清华、中科大 Termux 镜像），官方地址兜底。
+ * 通过 [install] 的 onUpdate 回调实时报告 下载/解压/安装 进度；Termux 包会自动安装依赖。
  */
 class ExtensionInstaller(
     private val context: Context,
@@ -69,11 +81,16 @@ class ExtensionInstaller(
         private const val MANIFEST = "installed.json"
         private const val USER_AGENT = "RikkaHub-MobiCode-Toolchain/1.0"
 
-        private val MIRROR_PREFIXES = listOf(
+        private val GITHUB_MIRRORS = listOf(
             "https://ghfast.top/",
             "https://gh-proxy.com/",
             "https://ghproxy.net/",
-            "https://mirror.ghproxy.com/",
+        )
+
+        /** Termux 官方仓库的国内镜像（下载走这里，索引内置在 APK 中）。 */
+        private val TERMUX_MIRRORS = listOf(
+            "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/",
+            "https://mirrors.ustc.edu.cn/termux/apt/termux-main/",
         )
     }
 
@@ -130,17 +147,65 @@ class ExtensionInstaller(
         }
     }
 
+    /**
+     * 安装扩展（含自动依赖安装）。
+     */
     suspend fun install(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit = {},
     ): Result<InstalledRecord> = withContext(Dispatchers.IO) {
         runCatching {
             require(entry.downloadUrl.isNotBlank()) { "扩展 ${entry.name} 缺少下载地址" }
-            extRoot.mkdirs()
-            val workDir = File(extRoot, "_tmp_${entry.id}")
-            workDir.mkdirs()
-            val archive = File(workDir, "archive.mcext")
 
+            // 0) 确保 Termux 索引已加载（依赖解析需要）
+            if (entry.format.equals("deb", ignoreCase = true)) {
+                runCatching { MobiCodeCatalog.ensureTermuxIndex(context) }
+            }
+
+            // 1) 先安装依赖（Termux deb）
+            val dependencies = resolveDependencies(entry)
+            dependencies.forEachIndexed { index, dep ->
+                if (isInstalled(dep.id)) return@forEachIndexed
+                onUpdate(InstallUpdate(InstallPhase.INSTALLING, dependencyNote = "安装依赖 ${dep.name}（${index + 1}/${dependencies.size}）"))
+                installSingle(dep, onUpdate).getOrThrow()
+            }
+
+            // 2) 安装自身
+            installSingle(entry, onUpdate).getOrThrow()
+        }
+    }
+
+    /** 递归收集依赖（BFS，已安装的跳过）。 */
+    private fun resolveDependencies(entry: ToolchainExtension): List<ToolchainExtension> {
+        if (entry.format != "deb" || entry.depends.isEmpty()) return emptyList()
+        val result = LinkedHashMap<String, ToolchainExtension>()
+        val queue = ArrayDeque<String>()
+        entry.depends.forEach { queue.add(it) }
+        while (queue.isNotEmpty()) {
+            val name = queue.removeFirst()
+            if (name.isBlank()) continue
+            val dep = MobiCodeCatalog.findTermuxPackage(context, name) ?: continue
+            if (dep.id == entry.id) continue
+            if (_installed.value.containsKey(dep.id)) continue
+            if (result.containsKey(dep.id)) continue
+            result[dep.id] = dep
+            dep.depends.forEach { queue.add(it) }
+        }
+        return result.values.toList()
+    }
+
+    private fun installSingle(
+        entry: ToolchainExtension,
+        onUpdate: (InstallUpdate) -> Unit,
+    ): Result<InstalledRecord> = runCatching {
+        extRoot.mkdirs()
+        val workDir = File(extRoot, "_tmp_${entry.id}")
+        workDir.mkdirs()
+        val isDeb = entry.format.equals("deb", ignoreCase = true)
+        val archiveName = if (isDeb) "archive.deb" else "archive.mcext"
+        val archive = File(workDir, archiveName)
+
+        try {
             // 1) 下载（镜像优先，实时进度）
             downloadWithMirrors(entry.downloadUrl, archive, entry.sha256) { d, t ->
                 onUpdate(InstallUpdate(InstallPhase.DOWNLOADING, downloaded = d, total = t))
@@ -151,25 +216,29 @@ class ExtensionInstaller(
             versionDir.deleteRecursively()
             val payloadDir = File(versionDir, "payload")
             payloadDir.mkdirs()
-            val count = extractPayload(archive, payloadDir) { done, total, current ->
-                onUpdate(InstallUpdate(InstallPhase.EXTRACTING, extracted = done, entries = total, currentEntry = current))
+            val count = if (isDeb) {
+                extractDebPayload(archive, payloadDir) { done, total, current ->
+                    onUpdate(InstallUpdate(InstallPhase.EXTRACTING, extracted = done, entries = total, currentEntry = current))
+                }
+            } else {
+                extractMcextPayload(archive, payloadDir) { done, total, current ->
+                    onUpdate(InstallUpdate(InstallPhase.EXTRACTING, extracted = done, entries = total, currentEntry = current))
+                }
             }
             if (count <= 0) {
-                versionDir.deleteRecursively(); archive.delete(); workDir.deleteRecursively()
-                error("扩展包内未找到 payload/ 内容")
+                versionDir.deleteRecursively()
+                error("扩展包内未找到可安装内容")
             }
 
             // 3) 赋可执行权限（root 优先，其次 Shizuku；都无则用普通权限，app 对自己的文件有权限）
             onUpdate(InstallUpdate(InstallPhase.INSTALLING))
             runCatching {
                 shellExecutor.execute(
-                    "chmod -R 0755 ${payloadDir.absolutePath.shellQuote()}",
+                    "chmod -R 0755 ${payloadDir.absolutePath.shellQuote()} 2>/dev/null; find ${payloadDir.absolutePath.shellQuote()} -type f -exec chmod 0755 {} + 2>/dev/null",
                     timeoutMillis = 120_000,
                     mode = shellExecutor.preferredMode(),
                 )
             }
-
-            archive.delete(); workDir.deleteRecursively()
 
             // 4) 计算并保存扩展环境变量（安装时保存，运行时不再扫描）
             val envVars = buildExtensionEnvVars(payloadDir)
@@ -185,6 +254,7 @@ class ExtensionInstaller(
                 description = entry.description,
                 category = entry.category,
                 downloadUrl = entry.downloadUrl,
+                format = if (isDeb) "deb" else "mcext",
                 envVars = envVars,
             )
             val map = _installed.value.toMutableMap()
@@ -192,6 +262,9 @@ class ExtensionInstaller(
             saveManifest(map)
             _installed.value = map
             record
+        } finally {
+            archive.delete()
+            workDir.deleteRecursively()
         }
     }
 
@@ -205,16 +278,30 @@ class ExtensionInstaller(
         }
     }
 
+    // ======================== 下载（镜像站优先） ========================
+
+    private fun mirrorCandidates(urlStr: String): List<String> {
+        return when {
+            urlStr.contains("github.com", ignoreCase = true) ->
+                GITHUB_MIRRORS.map { it + urlStr } + urlStr
+
+            urlStr.contains("packages.termux.dev", ignoreCase = true) -> {
+                val path = urlStr.substringAfter("packages.termux.dev/apt/termux-main/", "")
+                if (path.isBlank()) listOf(urlStr)
+                else TERMUX_MIRRORS.map { it + path } + urlStr
+            }
+
+            else -> listOf(urlStr)
+        }
+    }
+
     private fun downloadWithMirrors(
         urlStr: String,
         dest: File,
         expectedSha: String,
         onProgress: (Long, Long) -> Unit,
     ) {
-        val candidates = buildList {
-            MIRROR_PREFIXES.forEach { add(it + urlStr) }
-            add(urlStr)
-        }
+        val candidates = mirrorCandidates(urlStr)
         var lastError: Throwable? = null
         for (candidate in candidates) {
             try {
@@ -280,17 +367,259 @@ class ExtensionInstaller(
         return md.digest().joinToString("") { "%02x".format(it) }
     }
 
+    // ======================== mcext（ZIP）解压 ========================
+
+    private fun extractMcextPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
+        var count = 0
+        ZipFile(archive).use { zf ->
+            val all = zf.entries().toList()
+            val payloadEntries = all.filter { e ->
+                val n = e.name.replace('\\', '/')
+                n.startsWith("payload/") && n.removePrefix("payload/").isNotEmpty()
+            }
+            val total = payloadEntries.size
+            for (e in payloadEntries) {
+                val name = e.name.replace('\\', '/')
+                val rel = name.removePrefix("payload/")
+                if (rel.contains("..")) continue
+                val outFile = File(payloadDir, rel)
+                if (e.isDirectory) { outFile.mkdirs(); continue }
+                outFile.parentFile?.mkdirs()
+                zf.getInputStream(e).use { input ->
+                    outFile.outputStream().use { output -> input.copyTo(output, 128 * 1024) }
+                }
+                count++
+                if (count % 10 == 0 || count == total) onProgress(count, total, rel)
+            }
+            if (total == 0) onProgress(0, 0, null)
+        }
+        return count
+    }
+
+    // ======================== deb（ar + data.tar.xz）解压 ========================
+
+    /** Termux deb 内 payload 的实际前缀。 */
+    private val debPayloadPrefixes = listOf(
+        "data/data/com.termux/files/usr/",
+        "./data/data/com.termux/files/usr/",
+        "data/data/com.termux/files/home/",
+    )
+
+    private fun extractDebPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
+        // 1) 解析 ar 格式，找到 data.tar.*
+        val dataTarBytes = run {
+            val bytes = archive.readBytes()
+            require(bytes.size > 8 && bytes.copyOfRange(0, 8).toString(Charsets.US_ASCII) == "!<arch>\n") {
+                "不是有效的 deb 包"
+            }
+            var offset = 8
+            var found: ByteArray? = null
+            while (offset + 60 <= bytes.size) {
+                val name = bytes.copyOfRange(offset, offset + 16).toString(Charsets.US_ASCII).trim()
+                val size = bytes.copyOfRange(offset + 48, offset + 58).toString(Charsets.US_ASCII).trim().toIntOrNull() ?: 0
+                val dataStart = offset + 60
+                if (name.startsWith("data.tar")) {
+                    found = bytes.copyOfRange(dataStart, minOf(dataStart + size, bytes.size))
+                    break
+                }
+                offset = dataStart + size
+                if (offset % 2 == 1) offset++
+            }
+            found ?: error("deb 包内未找到 data.tar")
+        }
+
+        // 2) 解压 data.tar（xz/gz）
+        val tarStream: InputStream = when {
+            archive.name.endsWith(".deb") -> {
+                // 判断压缩格式：xz magic 0xFD 37 7A 58 5A 00 / gzip 1F 8B
+                when {
+                    dataTarBytes.size > 6 && dataTarBytes[0] == 0xFD.toByte() && dataTarBytes[1] == 0x37.toByte() ->
+                        XZInputStream(dataTarBytes.inputStream())
+                    dataTarBytes.size > 2 && dataTarBytes[0] == 0x1F.toByte() && dataTarBytes[1] == 0x8B.toByte() ->
+                        GZIPInputStream(dataTarBytes.inputStream())
+                    else -> dataTarBytes.inputStream()
+                }
+            }
+            else -> dataTarBytes.inputStream()
+        }
+
+        // 3) 解析 tar 并映射到 payload
+        var count = 0
+        tarStream.use { input ->
+            val reader = TarReader(input)
+            var totalEntries = 0
+            var lastReported = 0
+            var currentName: String? = null
+            while (true) {
+                val header = reader.nextHeader() ?: break
+                val path = normalizeTarPath(header.name)
+                val mapped = mapDebPath(path) ?: continue
+                val outFile = File(payloadDir, mapped)
+                when (header.type) {
+                    TarEntryType.DIRECTORY -> outFile.mkdirs()
+                    TarEntryType.SYMLINK -> {
+                        outFile.parentFile?.mkdirs()
+                        outFile.delete()
+                        runCatching { java.nio.file.Files.createSymbolicLink(outFile.toPath(), File(header.linkName).toPath()) }
+                    }
+                    TarEntryType.FILE -> {
+                        outFile.parentFile?.mkdirs()
+                        outFile.outputStream().use { output -> reader.copyEntryData(output, header.size) }
+                        outFile.setExecutable(true, false)
+                        count++
+                    }
+                    else -> reader.skipEntryData(header.size)
+                }
+                totalEntries++
+                if (count % 10 == 0 || count == totalEntries) onProgress(count, totalEntries, mapped)
+            }
+        }
+        return count
+    }
+
+    private fun normalizeTarPath(path: String): String =
+        path.replace('\\', '/').trim().removePrefix("./").split('/').filter { it.isNotEmpty() && it != "." }.joinToString("/")
+
+    /** 把 deb 内 Termux 路径映射到 payload 相对路径。 */
+    private fun mapDebPath(path: String): String? {
+        for (prefix in debPayloadPrefixes) {
+            val normalizedPrefix = prefix.removePrefix("./")
+            if (path.startsWith(normalizedPrefix)) {
+                return path.removePrefix(normalizedPrefix)
+            }
+        }
+        return null
+    }
+
+    // ======================== Tar 解析 ========================
+
+    private enum class TarEntryType { FILE, DIRECTORY, SYMLINK, OTHER }
+
+    private data class TarHeader(
+        val name: String,
+        val size: Long,
+        val type: TarEntryType,
+        val linkName: String,
+        val mode: Int,
+    )
+
+    private class TarReader(private val input: InputStream) {
+        private var pendingLongName: String? = null
+        private var pendingLongLink: String? = null
+
+        fun nextHeader(): TarHeader? {
+            while (true) {
+                val block = ByteArray(512)
+                val read = readFully(block)
+                if (read == 0) return null
+                if (read < 512) return null
+                if (block.all { it == 0.toByte() }) return null
+
+                val name = block.string(0, 100)
+                val prefix = block.string(345, 155)
+                val fullName = listOf(prefix, name).filter { it.isNotBlank() }.joinToString("/")
+                val typeChar = block[156].toInt().toChar()
+                val size = block.octal(124, 12)
+                val link = block.string(157, 100)
+                val mode = block.octal(100, 8).toInt()
+
+                when (typeChar) {
+                    'L' -> { // GNU long name
+                        pendingLongName = input.readExactly(size).toString(Charsets.UTF_8).trimEnd('\u0000', '\n')
+                        input.skipFully(((size + 511) / 512) * 512 - size)
+                        continue
+                    }
+                    'K' -> { // GNU long link
+                        pendingLongLink = input.readExactly(size).toString(Charsets.UTF_8).trimEnd('\u0000', '\n')
+                        input.skipFully(((size + 511) / 512) * 512 - size)
+                        continue
+                    }
+                    'x' -> { // PAX header: 简单跳过（名称以常规字段为准）
+                        input.skipFully(((size + 511) / 512) * 512)
+                        continue
+                    }
+                }
+
+                val finalName = pendingLongName ?: fullName
+                val finalLink = pendingLongLink ?: link
+                pendingLongName = null
+                pendingLongLink = null
+                val type = when (typeChar) {
+                    '5' -> TarEntryType.DIRECTORY
+                    '2' -> TarEntryType.SYMLINK
+                    '0', '\u0000' -> TarEntryType.FILE
+                    else -> TarEntryType.OTHER
+                }
+                return TarHeader(finalName, size, type, finalLink, mode)
+            }
+        }
+
+        fun copyEntryData(output: java.io.OutputStream, size: Long) {
+            var remaining = size
+            val buf = ByteArray(64 * 1024)
+            while (remaining > 0) {
+                val n = input.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+                if (n < 0) error("tar 数据意外结束")
+                output.write(buf, 0, n)
+                remaining -= n
+            }
+            skipPadding(size)
+        }
+
+        fun skipEntryData(size: Long) {
+            input.skipFully(size)
+            skipPadding(size)
+        }
+
+        private fun skipPadding(size: Long) {
+            val pad = ((size + 511) / 512) * 512 - size
+            if (pad > 0) input.skipFully(pad)
+        }
+
+        private fun readFully(buffer: ByteArray): Int {
+            var offset = 0
+            while (offset < buffer.size) {
+                val n = input.read(buffer, offset, buffer.size - offset)
+                if (n < 0) break
+                offset += n
+            }
+            return offset
+        }
+
+        private fun InputStream.readExactly(size: Long): ByteArray {
+            require(size <= Int.MAX_VALUE) { "tar 条目过大" }
+            val data = ByteArray(size.toInt())
+            val read = readFully(data)
+            require(read == data.size) { "tar 数据意外结束" }
+            return data
+        }
+
+        private fun InputStream.skipFully(size: Long) {
+            var remaining = size
+            while (remaining > 0) {
+                val skipped = skip(remaining)
+                if (skipped > 0) remaining -= skipped
+                else if (read() >= 0) remaining--
+                else return
+            }
+        }
+
+        private fun ByteArray.string(offset: Int, length: Int): String {
+            val end = (offset until minOf(offset + length, size)).firstOrNull { this[it] == 0.toByte() } ?: minOf(offset + length, size)
+            return copyOfRange(offset, end).toString(Charsets.UTF_8).trim()
+        }
+
+        private fun ByteArray.octal(offset: Int, length: Int): Long {
+            val text = string(offset, length).trim().trimEnd('\u0000')
+            return if (text.isBlank()) 0L else text.toLongOrNull(8) ?: 0L
+        }
+    }
+
+    // ======================== 环境变量 ========================
+
     /**
      * 照搬 MobiCode Studio 的 ExtensionEnvironmentGroup.variables 构建逻辑，
      * 在安装时计算并保存每个扩展的环境变量（运行时不再扫描文件）。
-     *
-     * 对应关系：
-     * - PATH               = payload/bin
-     * - LD_LIBRARY_PATH    = libraryDirectoriesOf(payload)
-     * - LIBRARY_PATH       = nativeLinkerSearchPaths(libraryDirectoriesOf(payload))
-     * - CPATH              = includeDirectoriesOf(payload)
-     * - MOBICODE_SYSROOT   = sysrootOf(payload)（存在时）
-     * - OPENSSL_CONF / SSL_CERT_FILE / OPENSSL_MODULES / NODE_PATH（按文件存在性）
      */
     private fun buildExtensionEnvVars(payload: File): Map<String, String> {
         val vars = LinkedHashMap<String, String>()
@@ -303,7 +632,6 @@ class ExtensionInstaller(
         val libDirs = libraryDirectoriesOf(payload)
         if (libDirs.isNotEmpty()) {
             vars["LD_LIBRARY_PATH"] = libDirs.joinToString(":") { it.absolutePath }
-            // nativeLinkerSearchPaths = extensionDirectories + androidSystemLibraryDirectories（过滤存在、去重）
             val linkerDirs = (libDirs + androidSystemLibraryDirectories())
                 .filter { it.isDirectory }
                 .distinctBy { it.absolutePath }
@@ -334,7 +662,6 @@ class ExtensionInstaller(
         return vars
     }
 
-    /** 照搬 MobiCode Studio 的 libraryDirectoriesOf(payload)。 */
     private fun libraryDirectoriesOf(payload: File): List<File> {
         val dirs = mutableListOf<File>()
         listOf(
@@ -350,7 +677,6 @@ class ExtensionInstaller(
         return dirs
     }
 
-    /** 照搬 MobiCode Studio 的 includeDirectoriesOf(payload)。 */
     private fun includeDirectoriesOf(payload: File): List<File> {
         val dirs = mutableListOf<File>()
         listOf(
@@ -368,35 +694,6 @@ class ExtensionInstaller(
         return dirs
     }
 
-    /** 照搬 MobiCode Studio 的 androidSystemLibraryDirectories()。 */
     private fun androidSystemLibraryDirectories(): List<File> =
         listOf(File("/system/lib64"), File("/system/lib")).filter { it.isDirectory }
-
-    /** 解压 payload/ 到 payloadDir，按文件数回调进度；返回解压文件数。 */
-    private fun extractPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
-        var count = 0
-        ZipFile(archive).use { zf ->
-            val all = zf.entries().toList()
-            val payloadEntries = all.filter { e ->
-                val n = e.name.replace('\\', '/')
-                n.startsWith("payload/") && n.removePrefix("payload/").isNotEmpty()
-            }
-            val total = payloadEntries.size
-            for (e in payloadEntries) {
-                val name = e.name.replace('\\', '/')
-                val rel = name.removePrefix("payload/")
-                if (rel.contains("..")) continue
-                val outFile = File(payloadDir, rel)
-                if (e.isDirectory) { outFile.mkdirs(); continue }
-                outFile.parentFile?.mkdirs()
-                zf.getInputStream(e).use { input ->
-                    outFile.outputStream().use { output -> input.copyTo(output, 128 * 1024) }
-                }
-                count++
-                if (count % 10 == 0 || count == total) onProgress(count, total, rel)
-            }
-            if (total == 0) onProgress(0, 0, null)
-        }
-        return count
-    }
 }

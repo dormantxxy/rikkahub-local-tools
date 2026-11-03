@@ -82,12 +82,12 @@ android {
             signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = true
+                // Shizuku UserService 由 Shizuku 进程反射实例化，必须保留类与构造函数
+                keepRules {
+                    includeDefault = true
+                    files.add(project.file("proguard-rules.pro"))
+                }
             }
-            // Shizuku UserService 由 Shizuku 进程反射实例化，必须保留类与构造函数
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -342,6 +342,9 @@ dependencies {
 
     // sqlite-android (requery SQLite for Android)
     implementation(libs.sqlite.android)
+
+    // XZ 解压（Termux .deb 的 data.tar.xz）
+    implementation(libs.xz)
 
     // modules
     implementation(project(":ai"))
