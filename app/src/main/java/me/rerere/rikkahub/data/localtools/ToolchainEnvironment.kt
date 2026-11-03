@@ -90,11 +90,26 @@ object ToolchainEnvironment {
         if (includeDirs.isNotEmpty()) envVars["CPATH"] = includeDirs.joinToString(":")
         // 扩展自己的非聚合变量（OPENSSL_CONF / SSL_CERT_FILE / OPENSSL_MODULES / NODE_PATH / MOBICODE_SYSROOT）
         for (rec in records) {
+            // Termux git 需要 GIT_EXEC_PATH 才能找到 git-remote-https 等 helper
+            val gitExec = File(rec.payloadDir, "libexec/git-core")
+            if (gitExec.isDirectory) envVars["GIT_EXEC_PATH"] = gitExec.absolutePath
             rec.envVars.forEach { (k, v) ->
                 if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH") {
+                    // SSL_CERT_FILE 优先取 ca-certificates 的证书，避免被其他扩展覆盖
+                    if (k == "SSL_CERT_FILE" && !envVars["SSL_CERT_FILE"].isNullOrBlank()) {
+                        return@forEach
+                    }
                     envVars[k] = v
                 }
             }
+        }
+        // 兜底：即使 ca-certificates 扩展记录丢失，也扫描目录找到证书
+        if (envVars["SSL_CERT_FILE"].isNullOrBlank()) {
+            val cert = File(context.filesDir, "extensions/termux.ca.certificates")
+                .listFiles()?.asSequence()
+                ?.map { File(it, "payload/etc/tls/cert.pem") }
+                ?.firstOrNull { it.isFile }
+            if (cert != null) envVars["SSL_CERT_FILE"] = cert.absolutePath
         }
 
         return ToolchainEnv(

@@ -665,6 +665,10 @@ class ExtensionInstaller(
         val includeDirs = includeDirectoriesOf(payload)
         if (includeDirs.isNotEmpty()) vars["CPATH"] = includeDirs.joinToString(":") { it.absolutePath }
 
+        // Termux git 等包需要 GIT_EXEC_PATH 才能找到 git-remote-* helper
+        val gitExec = File(payload, "libexec/git-core")
+        if (gitExec.isDirectory) vars["GIT_EXEC_PATH"] = gitExec.absolutePath
+
         // MOBICODE_SYSROOT = sysrootOf(payload)
         val sysroot = listOf("sysroot", "ndk/sysroot")
             .map { File(payload, it) }
