@@ -121,13 +121,13 @@ jobs:
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build GitHub debug APK
+      - name: Build GitHub release APK (R8)
         env:
           RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
-        run: ./gradlew assembleGithubDebug --no-daemon --max-workers=2 --stacktrace
+        run: ./gradlew assembleGithubRelease --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: rikkahub-local-tools-apk
-          path: app/build/outputs/apk/github/debug/*.apk
+          path: app/build/outputs/apk/github/release/*.apk
