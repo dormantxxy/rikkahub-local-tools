@@ -10,15 +10,22 @@ import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 
-private val CLI_DANGEROUS = listOf(
-    "rm -rf /", "mkfs", "dd if=", "> /dev/block", "reboot", "shutdown",
-    "pm uninstall", "wipe ", "fastboot", "mv /*",
+private val CLI_DANGEROUS_PATTERNS = listOf(
+    Regex("""rm\s+-rf\s+/(\s|$|;|&|\|)"""),
+    Regex("""rm\s+-rf\s+/\*"""),
+    Regex("""rm\s+-rf\s+/(system|data|vendor|product|sdcard|storage)(\s|$|;|&|\|)"""),
+    Regex("""\bmkfs(\s|$)"""),
+    Regex("""\bdd\s+if="""),
+    Regex(""">\s*/dev/block"""),
+    Regex("""\breboot(\s|$)"""),
+    Regex("""\bshutdown(\s|$)"""),
+    Regex("""\bpm\s+uninstall(\s|$)"""),
+    Regex("""\bfastboot(\s|$)"""),
+    Regex("""\bmv\s+/\*"""),
 )
 
-private fun cliIsDangerous(text: String): Boolean {
-    val t = text.lowercase()
-    return CLI_DANGEROUS.any { t.contains(it) }
-}
+private fun cliIsDangerous(text: String): Boolean =
+    CLI_DANGEROUS_PATTERNS.any { it.containsMatchIn(text.lowercase()) }
 
 /**
  * 原生工具链 CLI：在所有已装扩展聚合成的 PATH/LD_LIBRARY_PATH 环境里执行用户命令，

@@ -12,8 +12,21 @@ import me.rerere.ai.ui.UIMessagePart
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
 
-private val DANGEROUS = listOf("rm -rf /", "mkfs", "dd if=", "> /dev/block", "reboot", "shutdown", "pm uninstall", "wipe ", "fastboot", "mv /*")
-private fun isDangerous(text: String): Boolean { val t = text.lowercase(); return DANGEROUS.any { t.contains(it) } }
+// 精确的危险命令判断：避免 rm -rf /data/... 这类安全路径被误判
+private val DANGEROUS_PATTERNS = listOf(
+    Regex("""rm\s+-rf\s+/(\s|$|;|&|\|)"""),
+    Regex("""rm\s+-rf\s+/\*"""),
+    Regex("""rm\s+-rf\s+/(system|data|vendor|product|sdcard|storage)(\s|$|;|&|\|)"""),
+    Regex("""\bmkfs(\s|$)"""),
+    Regex("""\bdd\s+if="""),
+    Regex(""">\s*/dev/block"""),
+    Regex("""\breboot(\s|$)"""),
+    Regex("""\bshutdown(\s|$)"""),
+    Regex("""\bpm\s+uninstall(\s|$)"""),
+    Regex("""\bfastboot(\s|$)"""),
+    Regex("""\bmv\s+/\*"""),
+)
+private fun isDangerous(text: String): Boolean = DANGEROUS_PATTERNS.any { it.containsMatchIn(text.lowercase()) }
 
 /** 设备 Shell：root(su) 优先，否则普通权限。 */
 internal fun buildRunShellTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(

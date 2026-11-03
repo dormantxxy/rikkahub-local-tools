@@ -68,8 +68,14 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
         if (options.contains(LocalToolOption.Shell)) {
-            // 设备 Shell 审批跟随工作区「工具审批」中的“设备 Shell”开关
-            tools.add(runShellTool.copy(needsApproval = { input -> deviceShellApproval || runShellTool.needsApproval(input) }))
+            // 设备 Shell 审批开关：关闭时完全不拦截（包括风险命令）；开启时仅风险命令需要审批
+            tools.add(
+                if (deviceShellApproval) {
+                    runShellTool.copy(needsApproval = { input -> runShellTool.needsApproval(input) })
+                } else {
+                    runShellTool.copy(needsApproval = { false })
+                }
+            )
         }
         if (options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
         if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
