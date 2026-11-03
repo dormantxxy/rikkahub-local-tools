@@ -13,8 +13,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,7 +32,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LargeFlexibleTopAppBar
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -43,10 +48,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -66,7 +72,6 @@ import org.koin.androidx.compose.koinViewModel
 @Composable
 fun ToolchainsPage() {
     val vm: ToolchainsVM = koinViewModel()
-    val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val itemList by vm.items.collectAsStateWithLifecycle()
     val progress by vm.progress.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
@@ -77,7 +82,38 @@ fun ToolchainsPage() {
     val termuxLoading by vm.termuxLoading.collectAsStateWithLifecycle()
     val termuxError by vm.termuxError.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
-    val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
+    val categories = MobiCodeCatalog.CATEGORIES
+    val builtInIds = remember(vm.builtIn) { vm.builtIn.map { it.id }.toSet() }
+
+    val pagerState = rememberPagerState(
+        initialPage = categories.indexOf(category).coerceAtLeast(0),
+    ) { categories.size }
+
+    // 分类 tab 与左右滑动 Pager 双向同步（跟手滑动）
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.currentPage }.collect { page ->
+            vm.setCategory(categories[page])
+        }
+    }
+    LaunchedEffect(category) {
+        val index = categories.indexOf(category)
+        if (index >= 0 && pagerState.currentPage != index) {
+            pagerState.animateScrollToPage(index)
+        }
+    }
+
+    // 输入法收起后清除搜索框焦点；滑动页面/返回时也清除，避免总是弹出输入法
+    val imeVisible = WindowInsets.isImeVisible
+    var wasImeVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(imeVisible) {
+        if (wasImeVisible && !imeVisible) focusManager.clearFocus()
+        wasImeVisible = imeVisible
+    }
+    LaunchedEffect(pagerState.isScrollInProgress) {
+        if (pagerState.isScrollInProgress) focusManager.clearFocus()
+    }
+    BackHandler(enabled = imeVisible) { focusManager.clearFocus() }
 
     LaunchedEffect(message) {
         message?.let {
@@ -88,14 +124,12 @@ fun ToolchainsPage() {
 
     Scaffold(
         topBar = {
-            LargeFlexibleTopAppBar(
+            TopAppBar(
                 title = { Text("扩展商店") },
                 navigationIcon = { BackButton() },
-                scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
         },
-        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
         Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -111,10 +145,13 @@ fun ToolchainsPage() {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
             ) {
-                items(MobiCodeCatalog.CATEGORIES) { cat ->
+                items(categories) { cat ->
                     FilterChip(
                         selected = category == cat,
-                        onClick = { vm.setCategory(cat) },
+                        onClick = {
+                            vm.setCategory(cat)
+                            focusManager.clearFocus()
+                        },
                         label = { Text(cat, style = MaterialTheme.typography.labelMedium) },
                     )
                 }
@@ -154,57 +191,81 @@ fun ToolchainsPage() {
             ) {
                 PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
             }
-            // ===== 下拉刷新 + 只有列表可滚动 =====
-            PullToRefreshBox(
-                isRefreshing = termuxLoading,
-                onRefresh = { vm.ensureTermuxIndex(force = true) },
+            // ===== 分类页：左右滑动切换（跟手） =====
+            HorizontalPager(
+                state = pagerState,
                 modifier = Modifier.fillMaxWidth().weight(1f),
-            ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                item {
-                    Text(
-                        when {
-                            query.isNotBlank() -> "搜索结果（${itemList.size}）"
-                            category == "精选" -> "精选扩展"
-                            else -> category
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-                    )
+            ) { page ->
+                val cat = categories[page]
+                val pageItems = remember(itemList, cat) { filterForCategory(itemList, cat, builtInIds) }
+                val pageListState = rememberLazyListState()
+                LaunchedEffect(pageListState.isScrollInProgress) {
+                    if (pageListState.isScrollInProgress) focusManager.clearFocus()
                 }
-                if (itemList.isEmpty()) {
-                    item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                PullToRefreshBox(
+                    isRefreshing = termuxLoading,
+                    onRefresh = { vm.ensureTermuxIndex(force = true) },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(
+                        state = pageListState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        item {
                             Text(
-                                if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                when {
+                                    query.isNotBlank() -> "搜索结果（${pageItems.size}）"
+                                    cat == "全部" -> "全部扩展"
+                                    cat == "精选" -> "精选扩展"
+                                    else -> cat
+                                },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+                            )
+                        }
+                        if (pageItems.isEmpty()) {
+                            item {
+                                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                        items(pageItems, key = { it.ext.id }) { item ->
+                            StoreCard(
+                                item = item,
+                                progress = progress?.takeIf { it.id == item.ext.id },
+                                busy = progress != null,
+                                selectedVersion = selectedVersions[item.ext.id] ?: item.ext.availableVersions.first().version,
+                                onSelectVersion = { vm.selectVersion(item.ext, it) },
+                                onInstall = { vm.install(item.ext) },
+                                onUninstall = { vm.uninstall(item.ext) },
+                                onCancel = { vm.cancelInstall() },
                             )
                         }
                     }
                 }
-                items(itemList, key = { it.ext.id }) { item ->
-                    StoreCard(
-                        item = item,
-                        progress = progress?.takeIf { it.id == item.ext.id },
-                        busy = progress != null,
-                        selectedVersion = selectedVersions[item.ext.id] ?: item.ext.availableVersions.first().version,
-                        onSelectVersion = { vm.selectVersion(item.ext, it) },
-                        onInstall = { vm.install(item.ext) },
-                        onUninstall = { vm.uninstall(item.ext) },
-                        onCancel = { vm.cancelInstall() },
-                    )
-                }
-            }
             }
         }
     }
+}
+
+/** 按分类过滤商店列表。 */
+private fun filterForCategory(
+    items: List<ToolchainItem>,
+    category: String,
+    builtInIds: Set<String>,
+): List<ToolchainItem> = when (category) {
+    "全部" -> items
+    "精选" -> items.filter { it.ext.id in builtInIds || it.isInstalled }
+    "已安装" -> items.filter { it.isInstalled }
+    else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
 }
 
 /** 紧凑搜索框（正常搜索框高度）。 */

@@ -122,7 +122,7 @@ class ToolchainsVM(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val _category = MutableStateFlow("精选")
+    private val _category = MutableStateFlow("全部")
     val category: StateFlow<String> = _category.asStateFlow()
 
     /** 每个扩展当前选中的版本（id -> version）。 */
@@ -135,26 +135,14 @@ class ToolchainsVM(
      * - 搜索词非空：搜索全部扩展并按分类筛选
      */
     val items: StateFlow<List<ToolchainItem>> =
-        combine(installer.installed, _query, _termuxPackages, _category) { map, q, termux, cat ->
+        combine(installer.installed, _query, _termuxPackages) { map, q, termux ->
             val builtInIds = builtIn.map { it.id }.toSet()
             val installedOnly = map.values
                 .filter { it.id !in builtInIds }
                 .sortedBy { it.installedAt }
                 .map { recordToExtension(it) }
             val all = (builtIn + termux + installedOnly).distinctBy { it.id }
-            val pool: List<ToolchainExtension> = if (q.isNotBlank()) {
-                all.filter { matches(it, q) }
-            } else {
-                when (cat) {
-                    "精选" -> builtIn + installedOnly
-                    "全部" -> all
-                    "已安装" -> all.filter { map.containsKey(it.id) }
-                    else -> all.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
-                }
-            }
-            val filtered = if (q.isNotBlank() && cat != "全部" && cat != "精选" && cat != "已安装") {
-                pool.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
-            } else pool
+            val filtered = if (q.isNotBlank()) all.filter { matches(it, q) } else all
             filtered.map { ToolchainItem(it, map[it.id]) }
         }.stateIn(viewModelScope, SharingStarted.Lazily, builtIn.map { ToolchainItem(it, null) })
 
