@@ -288,7 +288,7 @@ private fun AssistantLocalToolContent(
                 icon = HugeIcons.ComputerTerminal01,
                 title = "命令行工具链",
                 description = if (hasPrivilege) "在工具链环境中执行命令"
-                else "需要高级权限（未授权时对 AI 不可见）",
+                else "需要高级权限（未授权时对助手不可见）",
                 enabled = hasPrivilege,
             )
             toolItemRaw(option = LocalToolOption.Files, icon = HugeIcons.Package, title = "文件管理", description = "浏览/读写/复制/移动/删除/搜索文件")
