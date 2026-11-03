@@ -124,7 +124,7 @@ object MobiCodeCatalog {
 
     /** 商店分类（顺序即 UI 显示顺序）。 */
     val CATEGORIES = listOf(
-        "全部", "精选", "已安装", "语言环境", "工具链", "编辑器", "网络", "数据库", "媒体", "实用工具", "游戏", "库", "其他"
+        "精选", "全部", "已安装", "语言环境", "工具链", "编辑器", "网络", "数据库", "媒体", "实用工具", "游戏", "库", "其他"
     )
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }

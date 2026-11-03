@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -17,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -24,12 +26,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -48,6 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -92,122 +97,162 @@ fun ToolchainsPage() {
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = CustomColors.topBarColors.containerColor,
     ) { innerPadding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = innerPadding + PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = vm::setQuery,
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(16.dp),
-                    placeholder = { Text("搜索全部扩展（语言 / 工具 / 编辑器 / 网络…）") },
-                )
-            }
-            item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp),
-                ) {
-                    items(MobiCodeCatalog.CATEGORIES) { cat ->
-                        FilterChip(
-                            selected = category == cat,
-                            onClick = { vm.setCategory(cat) },
-                            label = { Text(cat, style = MaterialTheme.typography.labelMedium) },
-                        )
-                    }
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+            // ===== 固定区：搜索框 =====
+            CompactSearchBar(
+                value = query,
+                onValueChange = vm::setQuery,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
+            )
+            // ===== 固定区：分类按钮 =====
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
+            ) {
+                items(MobiCodeCatalog.CATEGORIES) { cat ->
+                    FilterChip(
+                        selected = category == cat,
+                        onClick = { vm.setCategory(cat) },
+                        label = { Text(cat, style = MaterialTheme.typography.labelMedium) },
+                    )
                 }
             }
-            if (termuxLoading && query.isNotBlank()) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text(
-                            "正在加载在线扩展索引（3000+ 包）…",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+            // ===== 固定区：加载/错误状态 =====
+            if (termuxLoading) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                    Text(
+                        "正在加载在线扩展索引（3000+ 包）…",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
             termuxError?.let { error ->
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            "在线索引加载失败：$error",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(onClick = { vm.ensureTermuxIndex(force = true) }) { Text("重试") }
-                    }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "在线索引加载失败：$error",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = { vm.ensureTermuxIndex(force = true) }) { Text("重试") }
                 }
             }
-            item {
-                PrivilegeBanner(privilege = privilege, onRefresh = { vm.refreshPrivilege() })
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
             }
-            item {
-                Text(
-                    if (query.isBlank()) {
-                        if (category == "全部" || category == "精选") "精选扩展"
-                        else category
-                    } else "搜索结果（${itemList.size}）",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-            if (itemList.isEmpty()) {
+            // ===== 只有列表可滚动 =====
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                        Text(
-                            if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Text(
+                        when {
+                            query.isNotBlank() -> "搜索结果（${itemList.size}）"
+                            category == "精选" -> "精选扩展"
+                            else -> category
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+                    )
+                }
+                if (itemList.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
-            }
-            items(itemList, key = { it.ext.id }) { item ->
-                StoreCard(
-                    item = item,
-                    progress = progress?.takeIf { it.id == item.ext.id },
-                    busy = progress != null,
-                    selectedVersion = selectedVersions[item.ext.id] ?: item.ext.availableVersions.first().version,
-                    onSelectVersion = { vm.selectVersion(item.ext, it) },
-                    onInstall = { vm.install(item.ext) },
-                    onUninstall = { vm.uninstall(item.ext) },
-                )
+                items(itemList, key = { it.ext.id }) { item ->
+                    StoreCard(
+                        item = item,
+                        progress = progress?.takeIf { it.id == item.ext.id },
+                        busy = progress != null,
+                        selectedVersion = selectedVersions[item.ext.id] ?: item.ext.availableVersions.first().version,
+                        onSelectVersion = { vm.selectVersion(item.ext, it) },
+                        onInstall = { vm.install(item.ext) },
+                        onUninstall = { vm.uninstall(item.ext) },
+                    )
+                }
             }
         }
     }
 }
 
+/** 紧凑搜索框（正常搜索框高度）。 */
 @Composable
-private fun PrivilegeBanner(privilege: String, onRefresh: () -> Unit) {
+private fun CompactSearchBar(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth().height(40.dp),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                HugeIcons.Search01,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(8.dp))
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurface),
+                decorationBox = { innerTextField ->
+                    if (value.isEmpty()) {
+                        Text(
+                            "搜索",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    innerTextField()
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrivilegeText(privilege: String, onRefresh: () -> Unit, modifier: Modifier = Modifier) {
     val text = when (privilege) {
-        "root" -> "✓ 已获得 root，原生工具链可直跑"
-        "shizuku" -> "✓ 已获得 Shizuku 授权，原生工具链可直跑"
-        "shizuku_unauthorized" -> "Shizuku 正在运行但未授权：请打开 Shizuku 管理器给本应用授权后点刷新"
-        else -> "⚠️ 未检测到 root / Shizuku，暂时无法直跑原生工具链"
+        "root" -> "✓ 已获得 root"
+        "shizuku" -> "✓ 已获得 Shizuku 授权"
+        "shizuku_unauthorized" -> "Shizuku 未授权（请在 Shizuku 管理器中开启）"
+        else -> "⚠️ 未检测到 root / Shizuku"
     }
     val color = if (privilege == "root" || privilege == "shizuku") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = color, modifier = Modifier.weight(1f))
         if (privilege != "root" && privilege != "shizuku") {
             TextButton(onClick = onRefresh) { Text("刷新", style = MaterialTheme.typography.labelSmall) }
@@ -307,32 +352,25 @@ private fun StoreCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (ext.availableVersions.size > 1) {
-                        Box {
-                            TextButton(onClick = { versionMenuExpanded = true }, enabled = !busy) {
-                                Text("v$selectedVersion ▾", style = MaterialTheme.typography.labelSmall)
-                            }
-                            DropdownMenu(
-                                expanded = versionMenuExpanded,
-                                onDismissRequest = { versionMenuExpanded = false },
-                            ) {
-                                ext.availableVersions.forEach { v ->
-                                    DropdownMenuItem(
-                                        text = { Text("v${v.version}  (${humanSize(v.downloadSize)})", style = MaterialTheme.typography.bodySmall) },
-                                        onClick = {
-                                            onSelectVersion(v.version)
-                                            versionMenuExpanded = false
-                                        },
-                                    )
-                                }
+                    // 版本选择：始终可点击选择（Termux 包也显示当前版本）
+                    Box {
+                        TextButton(onClick = { versionMenuExpanded = true }, enabled = !busy) {
+                            Text("版本：v$selectedVersion ▾", style = MaterialTheme.typography.labelSmall)
+                        }
+                        DropdownMenu(
+                            expanded = versionMenuExpanded,
+                            onDismissRequest = { versionMenuExpanded = false },
+                        ) {
+                            ext.availableVersions.forEach { v ->
+                                DropdownMenuItem(
+                                    text = { Text("v${v.version}  (${humanSize(v.downloadSize)})", style = MaterialTheme.typography.bodySmall) },
+                                    onClick = {
+                                        onSelectVersion(v.version)
+                                        versionMenuExpanded = false
+                                    },
+                                )
                             }
                         }
-                    } else {
-                        Text(
-                            ext.category,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (item.isInstalled) {

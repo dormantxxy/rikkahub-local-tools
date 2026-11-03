@@ -117,7 +117,7 @@ class ToolchainsVM(
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
-    private val _category = MutableStateFlow("全部")
+    private val _category = MutableStateFlow("精选")
     val category: StateFlow<String> = _category.asStateFlow()
 
     /** 每个扩展当前选中的版本（id -> version）。 */
@@ -126,26 +126,30 @@ class ToolchainsVM(
 
     /**
      * 商店显示列表：
-     * - 搜索词为空：内置精选 16 个 + 已安装的额外包（按分类筛选）
-     * - 搜索词非空：搜索内置 + Termux 在线索引（搜到什么显示什么，按分类筛选）
+     * - 搜索词为空：按分类显示全部可用扩展（内置精选 + 在线索引 + 已安装额外包）
+     * - 搜索词非空：搜索全部扩展并按分类筛选
      */
     val items: StateFlow<List<ToolchainItem>> =
         combine(installer.installed, _query, _termuxPackages, _category) { map, q, termux, cat ->
             val builtInIds = builtIn.map { it.id }.toSet()
-            val pool: List<ToolchainExtension> = if (q.isBlank()) {
-                builtIn + map.values
-                    .filter { it.id !in builtInIds }
-                    .sortedBy { it.installedAt }
-                    .map { recordToExtension(it) }
+            val installedOnly = map.values
+                .filter { it.id !in builtInIds }
+                .sortedBy { it.installedAt }
+                .map { recordToExtension(it) }
+            val all = (builtIn + termux + installedOnly).distinctBy { it.id }
+            val pool: List<ToolchainExtension> = if (q.isNotBlank()) {
+                all.filter { matches(it, q) }
             } else {
-                (builtIn + termux).filter { matches(it, q) }.distinctBy { it.id }
+                when (cat) {
+                    "精选" -> builtIn + installedOnly
+                    "全部" -> all
+                    "已安装" -> all.filter { map.containsKey(it.id) }
+                    else -> all.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
+                }
             }
-            val filtered = when (cat) {
-                "全部" -> pool
-                "精选" -> pool.filter { it.id in builtInIds }
-                "已安装" -> pool.filter { map.containsKey(it.id) }
-                else -> pool.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
-            }
+            val filtered = if (q.isNotBlank() && cat != "全部" && cat != "精选" && cat != "已安装") {
+                pool.filter { MobiCodeCatalog.categoryLabel(it.category) == cat }
+            } else pool
             filtered.map { ToolchainItem(it, map[it.id]) }
         }.stateIn(viewModelScope, SharingStarted.Lazily, builtIn.map { ToolchainItem(it, null) })
 
@@ -153,7 +157,8 @@ class ToolchainsVM(
     val privilege: StateFlow<String> = _privilege.asStateFlow()
 
     init {
-        // 不预加载 Termux 索引：默认列表无需网络；首次搜索时再后台拉取
+        // 打开商店即后台加载 Termux 在线索引（加载完成后包会显示在对应分类列表里）
+        ensureTermuxIndex()
         // 订阅 Shizuku 授权结果事件，自动刷新权限状态
         viewModelScope.launch {
             appEventBus.events.collect { event ->
