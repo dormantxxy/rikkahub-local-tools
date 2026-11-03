@@ -32,6 +32,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Search01
+import me.rerere.rikkahub.data.localtools.InstallPhase
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -153,10 +155,15 @@ fun ToolchainsPage() {
             ) {
                 PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
             }
-            // ===== 只有列表可滚动 =====
+            // ===== 下拉刷新 + 只有列表可滚动 =====
+            PullToRefreshBox(
+                isRefreshing = termuxLoading,
+                onRefresh = { vm.ensureTermuxIndex(force = true) },
+                modifier = Modifier.fillMaxWidth().weight(1f),
+            ) {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxWidth().weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -192,8 +199,10 @@ fun ToolchainsPage() {
                         onSelectVersion = { vm.selectVersion(item.ext, it) },
                         onInstall = { vm.install(item.ext) },
                         onUninstall = { vm.uninstall(item.ext) },
+                        onCancel = { vm.cancelInstall() },
                     )
                 }
+            }
             }
         }
     }
@@ -269,6 +278,7 @@ private fun StoreCard(
     onSelectVersion: (String) -> Unit,
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
+    onCancel: () -> Unit,
 ) {
     val ext: ToolchainExtension = item.ext
     var versionMenuExpanded by remember { mutableStateOf(false) }
@@ -373,17 +383,15 @@ private fun StoreCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (item.isInstalled) {
+                        if (progress != null) {
+                            OutlinedButton(onClick = onCancel) { Text("取消安装") }
+                        } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {
-                                FilledTonalButton(onClick = onInstall, enabled = !busy) {
-                                    Text(if (progress != null) "更新中…" else "更新")
-                                }
+                                FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("更新") }
                             }
                         } else {
-                            FilledTonalButton(onClick = onInstall, enabled = !busy) {
-                                Text(if (progress != null) "安装中…" else "安装")
-                            }
+                            FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("安装") }
                         }
                     }
                 }

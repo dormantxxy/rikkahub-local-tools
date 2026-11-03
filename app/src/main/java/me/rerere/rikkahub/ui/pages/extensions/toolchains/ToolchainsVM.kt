@@ -3,8 +3,12 @@ package me.rerere.rikkahub.ui.pages.extensions.toolchains
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -109,6 +113,7 @@ class ToolchainsVM(
     val termuxError: StateFlow<String?> = _termuxError.asStateFlow()
 
     private val _progress = MutableStateFlow<InstallProgress?>(null)
+    private var installJob: Job? = null
     val progress: StateFlow<InstallProgress?> = _progress.asStateFlow()
 
     private val _message = MutableStateFlow<String?>(null)
@@ -245,7 +250,7 @@ class ToolchainsVM(
         viewModelScope.launch { delay(1500); refreshPrivilege() }
     }
 
-    /** 安装指定版本的扩展（自动安装依赖）。 */
+    /** 安装指定版本的扩展（自动安装依赖，点击后立即显示进度）。 */
     fun install(ext: ToolchainExtension) {
         if (_progress.value != null) return
         val version = ext.availableVersions.firstOrNull { it.version == selectedVersion(ext) }
@@ -257,7 +262,15 @@ class ToolchainsVM(
             downloadSize = version.downloadSize,
             format = version.format,
         )
-        viewModelScope.launch {
+        // 立即显示进度（不等网络响应）
+        _progress.value = InstallProgress(
+            id = ext.id,
+            phase = InstallPhase.DOWNLOADING,
+            downloaded = 0,
+            total = version.downloadSize,
+            dependencyNote = "准备下载…",
+        )
+        installJob = viewModelScope.launch {
             _message.value = null
             val result = installer.install(target) { upd ->
                 _progress.value = InstallProgress(
@@ -269,10 +282,25 @@ class ToolchainsVM(
                 )
             }
             _progress.value = null
+            installJob = null
             _message.value = result.fold(
                 onSuccess = { "已安装 ${ext.name} ${version.version}" },
                 onFailure = { "安装失败：${it.message ?: "未知错误"}" },
             )
+        }
+    }
+
+    /** 取消当前安装并删除下载缓存。 */
+    fun cancelInstall() {
+        val id = _progress.value?.id
+        installJob?.cancel()
+        installJob = null
+        _progress.value = null
+        if (id != null) {
+            viewModelScope.launch(Dispatchers.IO) {
+                File(context.filesDir, "extensions/_tmp_$id").deleteRecursively()
+                _message.value = "已取消安装"
+            }
         }
     }
 

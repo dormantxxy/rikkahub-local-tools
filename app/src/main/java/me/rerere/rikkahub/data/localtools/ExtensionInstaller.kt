@@ -154,12 +154,12 @@ class ExtensionInstaller(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit = {},
     ): Result<InstalledRecord> = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             require(entry.downloadUrl.isNotBlank()) { "扩展 ${entry.name} 缺少下载地址" }
 
             // 0) 确保 Termux 索引已加载（依赖解析需要）
             if (entry.format.equals("deb", ignoreCase = true)) {
-                runCatching { MobiCodeCatalog.ensureTermuxIndex(context) }
+                MobiCodeCatalog.ensureTermuxIndex(context)
             }
 
             // 1) 先安装依赖（Termux deb）
@@ -172,6 +172,11 @@ class ExtensionInstaller(
 
             // 2) 安装自身
             installSingle(entry, onUpdate).getOrThrow()
+        } catch (e: CancellationException) {
+            File(extRoot, "_tmp_${entry.id}").deleteRecursively()
+            throw e
+        } catch (e: Throwable) {
+            Result.failure(e)
         }
     }
 
@@ -197,7 +202,7 @@ class ExtensionInstaller(
     private suspend fun installSingle(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit,
-    ): Result<InstalledRecord> = runCatching {
+    ): Result<InstalledRecord> = try {
         extRoot.mkdirs()
         val workDir = File(extRoot, "_tmp_${entry.id}")
         workDir.mkdirs()
@@ -261,11 +266,15 @@ class ExtensionInstaller(
             map[entry.id] = record
             saveManifest(map)
             _installed.value = map
-            record
+            Result.success(record)
         } finally {
             archive.delete()
             workDir.deleteRecursively()
         }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
     }
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
@@ -295,7 +304,7 @@ class ExtensionInstaller(
         }
     }
 
-    private fun downloadWithMirrors(
+    private suspend fun downloadWithMirrors(
         urlStr: String,
         dest: File,
         expectedSha: String,
@@ -309,6 +318,8 @@ class ExtensionInstaller(
                 val sha = sha256Of(dest)
                 if (expectedSha.isBlank() || sha.equals(expectedSha.trim(), ignoreCase = true)) return
                 lastError = IllegalStateException("sha256 校验失败：$candidate")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Throwable) {
                 lastError = e
             }
@@ -316,7 +327,7 @@ class ExtensionInstaller(
         throw lastError ?: IllegalStateException("下载失败：$urlStr")
     }
 
-    private fun downloadOne(urlStr: String, dest: File, onProgress: (Long, Long) -> Unit) {
+    private suspend fun downloadOne(urlStr: String, dest: File, onProgress: (Long, Long) -> Unit) {
         val url = URL(urlStr)
         var conn = url.openConnection() as HttpURLConnection
         conn.connectTimeout = 30_000
@@ -344,6 +355,7 @@ class ExtensionInstaller(
             dest.outputStream().use { output ->
                 val buf = ByteArray(128 * 1024)
                 while (true) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     val n = input.read(buf); if (n < 0) break
                     output.write(buf, 0, n); downloaded += n
                     // 每 512KB 报告一次，避免高频刷新 UI（与 RootfsInstaller 一致）
@@ -369,7 +381,7 @@ class ExtensionInstaller(
 
     // ======================== mcext（ZIP）解压 ========================
 
-    private fun extractMcextPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
+    private suspend fun extractMcextPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
         var count = 0
         ZipFile(archive).use { zf ->
             val all = zf.entries().toList()
@@ -379,6 +391,7 @@ class ExtensionInstaller(
             }
             val total = payloadEntries.size
             for (e in payloadEntries) {
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val name = e.name.replace('\\', '/')
                 val rel = name.removePrefix("payload/")
                 if (rel.contains("..")) continue
@@ -405,7 +418,7 @@ class ExtensionInstaller(
         "data/data/com.termux/files/home/",
     )
 
-    private fun extractDebPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
+    private suspend fun extractDebPayload(archive: File, payloadDir: File, onProgress: (Int, Int, String?) -> Unit): Int {
         // 1) 解析 ar 格式，找到 data.tar.*
         val dataTarBytes = run {
             val bytes = archive.readBytes()
@@ -451,6 +464,7 @@ class ExtensionInstaller(
             var lastReported = 0
             var currentName: String? = null
             while (true) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 val header = reader.nextHeader() ?: break
                 val path = normalizeTarPath(header.name)
                 val mapped = mapDebPath(path) ?: continue

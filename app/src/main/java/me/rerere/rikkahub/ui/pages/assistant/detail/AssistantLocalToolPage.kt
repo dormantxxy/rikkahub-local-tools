@@ -282,30 +282,30 @@ private fun AssistantLocalToolContent(
                 title = R.string.assistant_page_local_tools_chart_display_title,
                 description = R.string.assistant_page_local_tools_chart_display_desc,
             )
-            toolItemRaw(option = LocalToolOption.Shell, icon = HugeIcons.ComputerTerminal01, title = "设备 Shell", description = "在设备上执行 shell 命令（有 root 用 su）")
+            toolItemRaw(option = LocalToolOption.Shell, icon = HugeIcons.ComputerTerminal01, title = "设备命令", description = "在设备上执行系统命令")
             toolItemRaw(
                 option = LocalToolOption.Cli,
                 icon = HugeIcons.ComputerTerminal01,
-                title = "CLI 工具链",
-                description = if (hasPrivilege) "在原生工具链环境执行命令（git/python3/node/gcc/apktool/java…）"
-                else "需要 root 或 Shizuku 权限（未授权时对 AI 不可见）",
+                title = "命令行工具链",
+                description = if (hasPrivilege) "在工具链环境中执行命令"
+                else "需要高级权限（未授权时对 AI 不可见）",
                 enabled = hasPrivilege,
             )
             toolItemRaw(option = LocalToolOption.Files, icon = HugeIcons.Package, title = "文件管理", description = "浏览/读写/复制/移动/删除/搜索文件")
-            toolItemRaw(option = LocalToolOption.SearchCode, icon = HugeIcons.Code, title = "代码检索", description = "在目录里按关键字搜索文件内容")
+            toolItemRaw(option = LocalToolOption.SearchCode, icon = HugeIcons.Code, title = "代码检索", description = "按关键字搜索文件内容")
             toolItemRaw(option = LocalToolOption.FileTree, icon = HugeIcons.FolderOpen, title = "文件树", description = "列出目录结构")
-            toolItemRaw(option = LocalToolOption.WebFetch, icon = HugeIcons.Earth, title = "网页浏览", description = "后台抓取网页正文（不渲染）")
-            toolItemRaw(option = LocalToolOption.Toolchain, icon = HugeIcons.ComputerTerminal01, title = "工具链增强", description = "查看工具链环境 / 搜索并安装扩展包（env_info / pkg_search / pkg_install）")
-            toolItemRaw(option = LocalToolOption.UiAutomation, icon = HugeIcons.SmartPhone01, title = "UI 自动化", description = if (hasPrivilege) "点击 / 滑动 / 输入文本 / 控件树（tap / swipe / input_text / ui_dump）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
-            toolItemRaw(option = LocalToolOption.Screenshot, icon = HugeIcons.SmartPhone01, title = "截屏", description = if (hasPrivilege) "截取屏幕并保存到应用私有目录" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
-            toolItemRaw(option = LocalToolOption.Logcat, icon = HugeIcons.Code, title = "日志读取", description = if (hasPrivilege) "读取系统/应用日志（logcat）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
-            // 设备 Shell 审批：与工具列表同风格，默认关闭
+            toolItemRaw(option = LocalToolOption.WebFetch, icon = HugeIcons.Earth, title = "网页浏览", description = "抓取网页正文")
+            toolItemRaw(option = LocalToolOption.Toolchain, icon = HugeIcons.ComputerTerminal01, title = "工具链增强", description = "查看环境信息 / 搜索并安装扩展包")
+            toolItemRaw(option = LocalToolOption.UiAutomation, icon = HugeIcons.SmartPhone01, title = "界面自动化", description = if (hasPrivilege) "点击 / 滑动 / 输入文本 / 查看控件树" else "需要高级权限", enabled = hasPrivilege)
+            toolItemRaw(option = LocalToolOption.Screenshot, icon = HugeIcons.SmartPhone01, title = "截屏", description = if (hasPrivilege) "截取屏幕并保存" else "需要高级权限", enabled = hasPrivilege)
+            toolItemRaw(option = LocalToolOption.Logcat, icon = HugeIcons.Code, title = "日志读取", description = if (hasPrivilege) "读取系统与应用日志" else "需要高级权限", enabled = hasPrivilege)
+            // 设备命令审批：与工具列表同风格，默认关闭
             switchItem(
                 checked = assistant.deviceShellApproval,
                 onCheckedChange = { onUpdate(assistant.copy(deviceShellApproval = it)) },
                 leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
-                supportingContent = { Text("设备 Shell（run_shell_command）执行前是否需要用户确认（默认关闭）") },
-                headlineContent = { Text("设备 Shell 审批") },
+                supportingContent = { Text("执行命令前是否需要确认（默认关闭）") },
+                headlineContent = { Text("设备命令审批") },
             )
         }
     }
