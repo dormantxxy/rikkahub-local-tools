@@ -131,3 +131,15 @@ jobs:
         with:
           name: rikkahub-local-tools-apk
           path: app/build/outputs/apk/github/release/*.apk
+
+      - name: Publish Release (new tag every build)
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v3.1.1-build${{ github.run_number }}
+          name: RikkaHub 3.1.1 build${{ github.run_number }}
+          body_path: RELEASE_NOTES.txt
+          prerelease: false
+          make_latest: true
+          files: |
+            app/build/outputs/apk/github/release/*.apk
