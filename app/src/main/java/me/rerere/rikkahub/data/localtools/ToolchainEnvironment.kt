@@ -120,7 +120,12 @@ object ToolchainEnvironment {
             .listFiles()?.asSequence()
             ?.map { File(it, "payload/etc/tls/cert.pem") }
             ?.firstOrNull { it.isFile }
-        if (caCert != null) envVars["SSL_CERT_FILE"] = caCert.absolutePath
+        if (caCert != null) {
+            envVars["SSL_CERT_FILE"] = caCert.absolutePath
+            // libcurl / git 使用单独的 CA 环境变量，缺一不可
+            envVars["CURL_CA_BUNDLE"] = caCert.absolutePath
+            envVars["GIT_SSL_CAINFO"] = caCert.absolutePath
+        }
 
         return ToolchainEnv(
             path = envVars["PATH"] ?: HOST_PATH,
