@@ -69,9 +69,18 @@ object ToolchainEnvironment {
         // 新安装的扩展优先（同名命令以最新安装的为准，如 termux.git 覆盖旧 mobicode git）
         val records = installer.installed.value.values.sortedByDescending { it.installedAt }
 
+        // Termux git 有完整 git-remote-http（>100KB 二进制）；MobiCode git 2.55 只是 180B 脚本（HTTP 不可用）
+        fun hasUsableGit(rec: InstalledRecord): Boolean {
+            val f = File(rec.payloadDir, "libexec/git-core/git-remote-http")
+            return f.isFile && f.length() > 100_000
+        }
+        val hasUsableTermuxGit = records.any { it.id == "termux.git" && hasUsableGit(it) }
+
         // 聚合所有已装扩展的 PATH / LD_LIBRARY_PATH / CPATH（照搬 MobiCode enabledEnvironment*Directories）
         val binDirs = records.flatMap { rec ->
-            rec.envVars["PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
+            // 已装可用的 Termux git 时，跳过 MobiCode git 的 PATH（其缺 remote-curl）
+            if (hasUsableTermuxGit && rec.id == "mobicode.tool.git") emptyList()
+            else rec.envVars["PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
         }.distinct()
         val libDirs = records.flatMap { rec ->
             rec.envVars["LD_LIBRARY_PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
@@ -92,10 +101,9 @@ object ToolchainEnvironment {
         // 扩展自己的非聚合变量（OPENSSL_CONF / SSL_CERT_FILE / OPENSSL_MODULES / NODE_PATH / MOBICODE_SYSROOT）
         for (rec in records) {
             // Termux git 需要 GIT_EXEC_PATH 才能找到 git-remote-https 等 helper
-            // 只取第一个（records 已按安装时间新→旧排序，优先最新 git）
-            val gitExec = File(rec.payloadDir, "libexec/git-core")
-            if (gitExec.isDirectory && envVars["GIT_EXEC_PATH"].isNullOrBlank()) {
-                envVars["GIT_EXEC_PATH"] = gitExec.absolutePath
+            // 只取有真实 git-remote-http 二进制的扩展（MobiCode git 的只是脚本，跳过）
+            if (envVars["GIT_EXEC_PATH"].isNullOrBlank() && hasUsableGit(rec)) {
+                envVars["GIT_EXEC_PATH"] = File(rec.payloadDir, "libexec/git-core").absolutePath
             }
             rec.envVars.forEach { (k, v) ->
                 if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH") {
