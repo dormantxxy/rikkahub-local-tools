@@ -1,0 +1,13 @@
+RikkaHub 3.1.1 增强版
+
+本次更新：
+1. 扩展商店改为在线模式：默认显示 16 个精选扩展，搜索支持全部 3000+ Termux 软件包（清华/中科大/北外镜像索引，24h 缓存）。
+2. 商店界面重构：搜索框、分类标签、分类色图标、依赖数量展示、版本选择、已安装更新检测。
+3. Termux .deb 安装支持（ar + data.tar.xz 解压、路径映射），安装时自动解析并安装全部依赖。
+4. 扩展安装下载全部走国内镜像站（GitHub 镜像 / Termux 镜像）。
+5. Shizuku 改用 UserService 执行 shell（照搬 MobiCode 实现，替代私有的 Shizuku.newProcess），修复 Shizuku 无法连接问题。
+6. 新增本地工具：env_info、pkg_search、pkg_install、tap、swipe、input_text、ui_dump、screenshot、logcat。
+7. 修复输入框：有文字时按钮始终为发送（生成中也可加入队列），空输入+生成中才显示停止。
+8. search_code / list_file_tree / manage_files 搜索改为纯 Kotlin 实现，修复 Android grep 无输出问题。
+9. 左侧滑页移除图像生成入口，替换为扩展商店入口。
+10. 设备 Shell 审批开关（本地工具列表最下面，默认关闭）。
