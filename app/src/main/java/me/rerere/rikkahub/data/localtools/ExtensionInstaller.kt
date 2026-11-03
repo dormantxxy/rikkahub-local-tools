@@ -34,6 +34,8 @@ data class InstalledRecord(
     val downloadUrl: String = "",
     /** mcext 或 deb */
     val format: String = "mcext",
+    /** 是否有可执行命令（false 表示只是库/运行时/插件包）。 */
+    val hasCommands: Boolean = true,
     /**
      * 安装时保存的扩展环境变量（照搬 MobiCode Studio 的 ExtensionEnvironmentGroup.variables）：
      * PATH / LD_LIBRARY_PATH / LIBRARY_PATH / CPATH / MOBICODE_SYSROOT
