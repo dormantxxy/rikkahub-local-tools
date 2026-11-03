@@ -213,7 +213,7 @@ class ChatVM(
         }
         .distinctUntilChanged()
         .flatMapLatest { enabled ->
-            if (enabled) updateChecker.updateState else flowOf(UiState.Loading)
+            if (false && enabled) updateChecker.updateState else flowOf(UiState.Loading)
         }
         .stateIn(
             viewModelScope,

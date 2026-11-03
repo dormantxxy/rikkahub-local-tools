@@ -40,7 +40,15 @@ data class Assistant(
     val customHeaders: List<CustomHeader> = emptyList(),
     val customBodies: List<CustomBody> = emptyList(),
     val mcpServers: Set<Uuid> = emptySet(),
-    val localTools: List<LocalToolOption> = listOf(LocalToolOption.TimeInfo),
+    val localTools: List<LocalToolOption> = listOf(
+        LocalToolOption.TimeInfo,
+        LocalToolOption.FileTree,
+        LocalToolOption.SearchCode,
+        LocalToolOption.WebFetch,
+        LocalToolOption.Files,
+        LocalToolOption.Shell,
+        LocalToolOption.Cli,
+    ),
     /** 设备 Shell（run_shell_command）执行前是否需要用户审批，默认关闭。 */
     val deviceShellApproval: Boolean = false,
     val enableWebSearch: Boolean = false, // 网络搜索开关(每个助手独立)

@@ -1244,10 +1244,12 @@ class ChatService(
         val session = sessionManager.get(conversationId) ?: return
         val jobs = synchronized(session) {
             session.messageQueue.pause()
+            // 立即清空生成状态：点击停止后 UI 马上恢复，不必等待底层工具返回
+            session.setJob(null)
             session.cancelJobs()
         }
         if (jobs.isEmpty()) return
-        jobs.forEach { it.join() }
+        jobs.forEach { job -> kotlinx.coroutines.withTimeoutOrNull(2500) { job.join() } }
         if (session.isInitialized) finishInterruptedPendingTools(session)
     }
 }
