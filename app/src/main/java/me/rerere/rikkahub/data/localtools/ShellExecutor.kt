@@ -10,6 +10,7 @@ import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import me.rerere.rikkahub.shizuku.ShizukuShellManager
 
 /** Shell 执行结果 */
 data class ShellResult(
@@ -32,10 +33,10 @@ enum class ShellMode { NORMAL, ROOT, SHIZUKU }
  * 统一 Shell 执行器。
  * - NORMAL：普通 app 权限
  * - ROOT：su（root）
- * - SHIZUKU：通过 Shizuku.newProcess（root 启动的 Shizuku = root 域，可 exec data 目录、seccomp 关）
+ * - SHIZUKU：通过 Shizuku UserService（root 启动的 Shizuku = root 域，可 exec data 目录、seccomp 关）
  *
- * 原生工具链执行走 [executeToolchain]：root 优先，其次 Shizuku，二者都没有才报错。
- * 所有执行都可被协程取消（取消即杀整棵进程树）。
+ * Shizuku 执行方式与 MobiCode Studio 一致：绑定 ShizukuShellService，不再使用 `Shizuku.newProcess` 反射
+ * （该 API 在 Shizuku 13.x 中为私有方法，且会被 R8 移除）。
  */
 class ShellExecutor(
     private val context: Context,
@@ -77,11 +78,19 @@ class ShellExecutor(
         timeoutMillis: Long = 60_000,
         mode: ShellMode = ShellMode.NORMAL,
     ): ShellResult = withContext(Dispatchers.IO) {
+        if (mode == ShellMode.SHIZUKU) {
+            val r = ShizukuShellManager.exec(
+                command = command,
+                cwd = cwd,
+                timeoutSeconds = (timeoutMillis / 1000).toInt().coerceAtLeast(1),
+            )
+            return@withContext ShellResult(r.exitCode, r.stdout, r.stderr, r.timedOut)
+        }
         val process = try {
             when (mode) {
                 ShellMode.NORMAL -> startNormal(command, cwd)
                 ShellMode.ROOT -> startRoot(command, cwd)
-                ShellMode.SHIZUKU -> startShizuku(command, cwd)
+                ShellMode.SHIZUKU -> error("unreachable")
             }
         } catch (e: Throwable) {
             return@withContext ShellResult(-1, "", e.message ?: "执行失败")
@@ -115,16 +124,25 @@ class ShellExecutor(
             append(command)
         }
         return withContext(Dispatchers.IO) {
-            val process = try {
-                if (mode == ShellMode.ROOT) {
-                    Runtime.getRuntime().exec(arrayOf("su", "-c", script))
-                } else {
-                    startShizuku(script, null)
+            when (mode) {
+                ShellMode.ROOT -> {
+                    val process = try {
+                        Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+                    } catch (e: Throwable) {
+                        return@withContext ShellResult(-1, "", (e.message ?: "执行失败") + "（mode=$mode）")
+                    }
+                    awaitProcess(process, timeoutMillis)
                 }
-            } catch (e: Throwable) {
-                return@withContext ShellResult(-1, "", (e.message ?: "执行失败") + "（mode=$mode）")
+                ShellMode.SHIZUKU -> {
+                    val r = ShizukuShellManager.exec(
+                        command = script,
+                        cwd = null,
+                        timeoutSeconds = (timeoutMillis / 1000).toInt().coerceAtLeast(1),
+                    )
+                    ShellResult(r.exitCode, r.stdout, r.stderr, r.timedOut)
+                }
+                else -> ShellResult(-1, "", "不支持的执行模式")
             }
-            awaitProcess(process, timeoutMillis)
         }
     }
 
@@ -141,18 +159,6 @@ class ShellExecutor(
             append(command)
         }
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c", full))
-        runCatching { p.outputStream.close() }; return p
-    }
-
-    /** 通过 Shizuku.newProcess 执行（反射兼容 public/private）。 */
-    private fun startShizuku(command: String, cwd: String?): Process {
-        val clazz = Class.forName("rikka.shizuku.Shizuku")
-        val types = arrayOf(Array<String>::class.java, Array<String>::class.java, String::class.java)
-        val method = runCatching { clazz.getMethod("newProcess", *types) }
-            .getOrElse { clazz.getDeclaredMethod("newProcess", *types).apply { isAccessible = true } }
-        val cmd = arrayOf("/system/bin/sh", "-c", command)
-        val env = arrayOf("PATH=$HOST_PATH")
-        val p = method.invoke(null, cmd, env, cwd ?: "/") as Process
         runCatching { p.outputStream.close() }; return p
     }
 

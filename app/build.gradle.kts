@@ -83,6 +83,11 @@ android {
             optimization {
                 enable = true
             }
+            // Shizuku UserService 由 Shizuku 进程反射实例化，必须保留类与构造函数
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             buildConfigField("String", "VERSION_NAME", "\"${android.defaultConfig.versionName}\"")
             buildConfigField("String", "VERSION_CODE", "\"${android.defaultConfig.versionCode}\"")
         }
@@ -113,6 +118,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
     sourceSets {
         getByName("androidTest").assets.srcDirs("$projectDir/schemas")
