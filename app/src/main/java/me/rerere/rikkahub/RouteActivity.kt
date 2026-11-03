@@ -93,6 +93,7 @@ import me.rerere.rikkahub.ui.pages.backup.BackupPage
 import me.rerere.rikkahub.ui.pages.chat.ChatPage
 import me.rerere.rikkahub.ui.pages.debug.DebugPage
 import me.rerere.rikkahub.ui.pages.extensions.ExtensionsPage
+import me.rerere.rikkahub.ui.pages.extensions.toolchains.ToolchainsPage
 import me.rerere.rikkahub.ui.pages.extensions.PromptPage
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesPage
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailPage
@@ -132,9 +133,7 @@ import me.rerere.rikkahub.ui.pages.setting.SettingSearchPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaPage
 import me.rerere.rikkahub.ui.pages.setting.SettingMediaProviderDetailPage
 import me.rerere.rikkahub.ui.pages.setting.SettingSpeechPage
-import me.rerere.rikkahub.ui.pages.setting.SettingAutomationPage
 import me.rerere.rikkahub.ui.pages.setting.SettingWebPage
-import me.rerere.rikkahub.ui.pages.store.ToolStorePage
 import me.rerere.rikkahub.ui.pages.share.handler.ShareHandlerPage
 import me.rerere.rikkahub.ui.pages.stats.StatsPage
 import me.rerere.rikkahub.ui.pages.translator.TranslatorPage
@@ -143,6 +142,7 @@ import me.rerere.rikkahub.ui.theme.RikkahubTheme
 import me.rerere.rikkahub.utils.CrashHandler
 import me.rerere.rikkahub.utils.openUsageAccessSettings
 import okhttp3.OkHttpClient
+import rikka.shizuku.Shizuku
 import org.koin.android.ext.android.inject
 import org.koin.compose.koinInject
 import kotlin.uuid.Uuid
@@ -163,8 +163,22 @@ class RouteActivity : ComponentActivity() {
     private val okHttpClient by inject<OkHttpClient>()
     private val settingsStore by inject<SettingsStore>()
     private val mediaCreationRepository by inject<MediaCreationRepository>()
+    private val appEventBus by inject<me.rerere.rikkahub.data.event.AppEventBus>()
     private var navStack: MutableList<NavKey>? = null
     private val pendingIntents = ArrayDeque<Intent>()
+
+    // Shizuku 授权回调监听器：授权结果返回后刷新工具链权限状态
+    private val shizukuPermissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
+        android.util.Log.i("RouteActivity", "Shizuku permission result: requestCode=$requestCode, grantResult=$grantResult")
+        try {
+            // 使用注入的 appEventBus 发送（tryEmit 非挂起）
+            appEventBus.tryEmit(
+                me.rerere.rikkahub.data.event.AppEvent.ShizukuPermissionUpdated(grantResult == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("RouteActivity", "Failed to emit Shizuku permission event", e)
+        }
+    }
 
     // Volume key listener registry — last registered handler wins
     internal val volumeKeyListeners = mutableListOf<(isVolumeUp: Boolean) -> Boolean>()
@@ -186,6 +200,8 @@ class RouteActivity : ComponentActivity() {
         enableEdgeToEdge()
         disableNavigationBarContrast()
         super.onCreate(savedInstanceState)
+        // 注册 Shizuku 授权结果监听器（必须绑定 Activity 生命周期）
+        runCatching { Shizuku.addRequestPermissionResultListener(shizukuPermissionListener) }
         if (CrashHandler.hasCrashed(this)) {
             startActivity(Intent(this, SafeModeActivity::class.java))
             finish()
@@ -230,6 +246,11 @@ class RouteActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIntent(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        runCatching { Shizuku.removeRequestPermissionResultListener(shizukuPermissionListener) }
     }
 
     private fun handleIntent(intent: Intent) {
@@ -481,15 +502,6 @@ class RouteActivity : ComponentActivity() {
                                 SettingPreferencesNetworkPage()
                             }
 
-                            entry<Screen.SettingAutomation> {
-                                SettingAutomationPage()
-                            }
-
-                            entry<Screen.ToolStore> {
-                                ToolStorePage()
-                            }
-
-
                             entry<Screen.SettingProvider> {
                                 SettingProviderPage()
                             }
@@ -548,7 +560,6 @@ class RouteActivity : ComponentActivity() {
                                 SettingWebPage()
                             }
 
-
                             entry<Screen.Debug> {
                                 DebugPage()
                             }
@@ -557,6 +568,9 @@ class RouteActivity : ComponentActivity() {
                                 LogPage()
                             }
 
+                            entry<Screen.Toolchains> {
+                                ToolchainsPage()
+                            }
                             entry<Screen.Extensions> {
                                 ExtensionsPage()
                             }
@@ -754,13 +768,6 @@ sealed interface Screen : NavKey {
     data object SettingPreferencesNetwork : Screen
 
     @Serializable
-    data object SettingAutomation : Screen
-
-    @Serializable
-    data object ToolStore : Screen
-
-
-    @Serializable
     data object SettingProvider : Screen
 
     @Serializable
@@ -802,7 +809,6 @@ sealed interface Screen : NavKey {
     @Serializable
     data object SettingWeb : Screen
 
-
     @Serializable
     data object Debug : Screen
 
@@ -811,6 +817,9 @@ sealed interface Screen : NavKey {
 
     @Serializable
     data object Extensions : Screen
+
+    @Serializable
+    data object Toolchains : Screen
 
     @Serializable
     data object QuickMessages : Screen

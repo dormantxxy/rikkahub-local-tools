@@ -172,15 +172,6 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
 
         // 赞助提醒
         plain(SPONSOR_ALERT_DISMISSED_AT, Settings::sponsorAlertDismissedAt) { copy(sponsorAlertDismissedAt = it) },
-
-        // 本地工具
-        json(LOCAL_TOOLS_CONFIG, Settings::localToolsConfig) { copy(localToolsConfig = it) },
-
-        // 自动化
-        json(AUTOMATION_CONFIG, Settings::automationConfig) { copy(automationConfig = it) },
-
-        // 当前项目
-        plain(PROJECT_PATH, Settings::projectPath) { copy(projectPath = it) },
     )
 }
 

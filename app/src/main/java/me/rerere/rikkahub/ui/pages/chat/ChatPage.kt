@@ -380,6 +380,26 @@ private fun ChatPageContent(
                         }
                         inputState.clearInput()
                     },
+                    // 回车发送：即使正在生成也加入队列，不停止生成
+                    onEnterSend = {
+                        if (currentChatModel == null) {
+                            toaster.show("请先选择模型", type = ToastType.Error)
+                            return@ChatInput
+                        }
+                        if (inputState.isEditing()) {
+                            vm.handleMessageEdit(
+                                parts = inputState.getContents(),
+                                messageId = inputState.editingMessage!!,
+                            )
+                        } else {
+                            vm.handleMessageSend(inputState.getContents())
+                            scope.launch {
+                                delay(100.milliseconds)
+                                chatListState.requestScrollToItem(conversation.currentMessages.size + 5)
+                            }
+                        }
+                        inputState.clearInput()
+                    },
                     onLongSendClick = {
                         if (inputState.isEditing()) {
                             vm.handleMessageEdit(

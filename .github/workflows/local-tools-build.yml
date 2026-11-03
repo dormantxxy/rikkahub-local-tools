@@ -42,7 +42,7 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          set -e
+          set -uo pipefail
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           SDKMGR="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
@@ -52,8 +52,33 @@ jobs:
           fi
           echo "sdkmanager=$SDKMGR"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-          "$SDKMGR" "platforms;android-37" "build-tools;37.0.0" "platform-tools" "ndk;28.2.13676358" || \
-          "$SDKMGR" "platforms;android-36" "build-tools;36.0.0" "platform-tools" "ndk;28.2.13676358"
+          # 逐个安装 + 重试：NDK 有 700MB，时不时会网络抖动
+          # (Error reading Zip content / Connection reset)，一次失败不能把整个构建搞挂
+          install_pkg() {
+            local pkg="$1"
+            local i
+            for i in 1 2 3; do
+              if "$SDKMGR" "$pkg" >/dev/null 2>&1; then
+                echo "installed: $pkg"
+                return 0
+              fi
+              echo "retry($i) $pkg"
+              sleep 8
+            done
+            echo "::warning::could not install $pkg"
+            return 0
+          }
+          install_pkg "platform-tools"
+          install_pkg "build-tools;36.0.0"
+          install_pkg "build-tools;37.0.0"
+          install_pkg "platforms;android-36"
+          install_pkg "platforms;android-37"
+          # NDK 必需（workspace/terminal 模块有 CMake 源码），多给几轮机会
+          install_pkg "ndk;28.2.13676358"
+          if [ ! -d "$ANDROID_HOME/ndk/28.2.13676358" ]; then
+            echo "::error::NDK 28.2.13676358 is still missing after 3 attempts"
+            exit 1
+          fi
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Generate placeholder google-services.json
@@ -92,15 +117,18 @@ jobs:
           # debug 变体带 .debug 后缀，需要额外的 client
           echo "google-services.json written"
 
-      - name: Generate debug keystore and signing config
+      - name: Configure fixed signing keystore
         run: |
-          KEYSTORE="$PWD/app/debug.keystore"
-          keytool -genkeypair -v \
-            -keystore "$KEYSTORE" \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null || true
+          set -e
+          # 固定签名：直接用仓库里提交的 keystore，绝不现场生成。
+          # 现场 keytool 生成会让每个包的签名都不同，必须卸载重装。
+          KEYSTORE="$PWD/app/keystore/release.keystore"
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "::error::app/keystore/release.keystore not found - build would be signed with a different key"
+            exit 1
+          fi
+          ls -l "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey
           cat >> local.properties << EOF
           storeFile=$KEYSTORE
           storePassword=android
@@ -122,6 +150,9 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build GitHub release APK
+        env:
+          # 让 versionCode 随 run number 递增，保证能覆盖安装旧包（不会 VERSION_DOWNGRADE）
+          RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
         run: ./gradlew assembleGithubRelease --no-daemon --stacktrace
 
       - name: Upload APK artifact

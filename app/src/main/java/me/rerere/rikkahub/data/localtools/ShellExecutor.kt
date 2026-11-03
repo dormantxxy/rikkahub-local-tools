@@ -1,12 +1,15 @@
 package me.rerere.rikkahub.data.localtools
 
 import android.content.Context
-import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
+import java.io.InputStream
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 /** Shell 执行结果 */
 data class ShellResult(
@@ -18,232 +21,194 @@ data class ShellResult(
     val isSuccess: Boolean get() = exitCode == 0
     val output: String get() = buildString {
         if (stdout.isNotBlank()) append(stdout)
-        if (stderr.isNotBlank()) {
-            if (isNotEmpty()) append('\n')
-            append(stderr)
-        }
+        if (stderr.isNotBlank()) { if (isNotEmpty()) append('\n'); append(stderr) }
     }
 }
 
 /** 执行权限模式 */
-enum class ShellMode {
-    /** 普通 app 权限 */
-    NORMAL,
-
-    /** root 权限（su） */
-    ROOT,
-
-    /** shizuku 权限 */
-    SHIZUKU,
-}
+enum class ShellMode { NORMAL, ROOT, SHIZUKU }
 
 /**
  * 统一 Shell 执行器。
+ * - NORMAL：普通 app 权限
+ * - ROOT：su（root）
+ * - SHIZUKU：通过 Shizuku.newProcess（root 启动的 Shizuku = root 域，可 exec data 目录、seccomp 关）
  *
- * 支持三种权限模式：
- * - [ShellMode.NORMAL]: 通过 ProcessBuilder 直接执行
- * - [ShellMode.ROOT]: 通过 su -c 执行（需要 root）
- * - [ShellMode.SHIZUKU]: 通过 Shizuku 执行（需要 Shizuku 授权）
+ * 原生工具链执行走 [executeToolchain]：root 优先，其次 Shizuku，二者都没有才报错。
+ * 所有执行都可被协程取消（取消即杀整棵进程树）。
  */
 class ShellExecutor(
     private val context: Context,
 ) {
-    /**
-     * 首选执行模式：有 root 默认用 root，其次 shizuku，最后普通权限。
-     * 用户要求：root-shizuku-普通 顺序。
-     */
-    fun preferredMode(): ShellMode? = when {
+    companion object {
+        const val HOST_PATH =
+            "/sbin:/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin"
+    }
+
+    fun isRootAvailable(): Boolean = runCatching {
+        val p = ProcessBuilder("/system/bin/sh", "-c", "su -c id 2>/dev/null").redirectErrorStream(true).start()
+        p.outputStream.close()
+        val out = p.inputStream.bufferedReader().readText()
+        p.waitFor(8, TimeUnit.SECONDS) && out.contains("uid=0")
+    }.getOrDefault(false)
+
+    fun isShizukuAvailable(): Boolean = ShizukuHelper.isBinderAlive()
+    fun isShizukuGranted(): Boolean = ShizukuHelper.hasPermission()
+
+    fun hasPrivilege(): Boolean = isRootAvailable() || isShizukuGranted()
+
+    /** root 优先，其次 Shizuku。 */
+    fun preferredMode(): ShellMode = when {
         isRootAvailable() -> ShellMode.ROOT
-        isShizukuAvailable() -> ShellMode.SHIZUKU
+        isShizukuGranted() -> ShellMode.SHIZUKU
+        else -> ShellMode.NORMAL
+    }
+
+    /** 只能 root / Shizuku（工具链直跑用），都没有返回 null。 */
+    fun privilegedMode(): ShellMode? = when {
+        isRootAvailable() -> ShellMode.ROOT
+        isShizukuGranted() -> ShellMode.SHIZUKU
         else -> null
     }
 
-    /** 是否具备执行 CLI 的权限（只支持 root / shizuku，不再支持普通权限） */
-    fun hasPrivilege(): Boolean = isRootAvailable() || isShizukuAvailable()
-
-    /** 检测 shizuku 是否可用（通过反射，避免硬依赖） */
-    fun isShizukuAvailable(): Boolean {
-        return runCatching {
-            val clazz = Class.forName("rikka.shizuku.Shizuku")
-            val method = clazz.getMethod("pingBinder")
-            method.invoke(null)
-            true
-        }.getOrDefault(false)
-    }
-
-    /** 检测 root 是否可用（走 sh -c su，兼容 Magisk 授权弹窗） */
-    fun isRootAvailable(): Boolean {
-        return runCatching {
-            val p = ProcessBuilder("/system/bin/sh", "-c", "su -c id 2>/dev/null")
-                .redirectErrorStream(true)
-                .start()
-            p.outputStream.close()
-            val out = p.inputStream.bufferedReader().readText()
-            val finished = p.waitFor(8, TimeUnit.SECONDS)
-            if (!finished) {
-                p.destroyForcibly()
-                false
-            } else {
-                out.contains("uid=0")
-            }
-        }.getOrDefault(false)
-    }
-
-    /**
-     * 执行 shell 命令。
-     *
-     * @param command 要执行的命令
-     * @param cwd 工作目录
-     * @param timeoutMillis 超时时间
-     * @param mode 权限模式
-     */
     suspend fun execute(
         command: String,
         cwd: String? = null,
         timeoutMillis: Long = 60_000,
-        mode: ShellMode = ShellMode.SHIZUKU,
+        mode: ShellMode = ShellMode.NORMAL,
     ): ShellResult = withContext(Dispatchers.IO) {
-        when (mode) {
-            ShellMode.NORMAL -> executeNormal(command, cwd, timeoutMillis)
-            ShellMode.ROOT -> executeRoot(command, cwd, timeoutMillis)
-            ShellMode.SHIZUKU -> executeShizuku(command, cwd, timeoutMillis)
+        val process = try {
+            when (mode) {
+                ShellMode.NORMAL -> startNormal(command, cwd)
+                ShellMode.ROOT -> startRoot(command, cwd)
+                ShellMode.SHIZUKU -> startShizuku(command, cwd)
+            }
+        } catch (e: Throwable) {
+            return@withContext ShellResult(-1, "", e.message ?: "执行失败")
         }
+        awaitProcess(process, timeoutMillis)
     }
 
-    /** 执行普通命令 */
-    private fun executeNormal(
+    /** 在聚合后的原生工具链环境执行（root 优先，其次 Shizuku）。 */
+    suspend fun executeToolchain(
         command: String,
-        cwd: String?,
-        timeoutMillis: Long,
+        cwd: String? = null,
+        timeoutMillis: Long = 60_000,
+        env: ToolchainEnv,
     ): ShellResult {
-        return runCatching {
-            val builder = ProcessBuilder("/system/bin/sh", "-c", command)
-            if (!cwd.isNullOrBlank()) {
-                builder.directory(File(cwd))
-            }
-            val process = builder.start()
-            process.outputStream.close()
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                return@runCatching ShellResult(-1, stdout, stderr, timedOut = true)
-            }
-            ShellResult(process.exitValue(), stdout, stderr)
-        }.getOrElse {
-            ShellResult(-1, "", it.message ?: "执行失败")
+        val mode = privilegedMode()
+            ?: return ShellResult(-1, "", "需要 root 或 Shizuku 权限才能直跑原生工具链（当前都不可用）")
+        val script = buildString {
+            if (!cwd.isNullOrBlank()) append("cd ").append(cwd.shellQuote()).append(" && ")
+            append("export PATH=").append(env.path.shellQuote()).append("; ")
+            if (env.ldLibraryPath.isNotBlank()) append("export LD_LIBRARY_PATH=").append(env.ldLibraryPath.shellQuote()).append("; ")
+            append("export HOME=").append(env.home.shellQuote()).append("; ")
+            append("export TMPDIR=").append(env.tmp.shellQuote()).append("; ")
+            append("export LANG=en_US.UTF-8; ")
+            append(command)
         }
-    }
-
-    /** 通过 su 执行 root 命令 */
-    private fun executeRoot(
-        command: String,
-        cwd: String?,
-        timeoutMillis: Long,
-    ): ShellResult {
-        return runCatching {
-            val fullCommand = buildString {
-                if (!cwd.isNullOrBlank()) {
-                    append("cd ")
-                    append(cwd.shellQuote())
-                    append(" && ")
+        return withContext(Dispatchers.IO) {
+            val process = try {
+                if (mode == ShellMode.ROOT) {
+                    Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+                } else {
+                    startShizuku(script, null)
                 }
-                append(command)
+            } catch (e: Throwable) {
+                return@withContext ShellResult(-1, "", (e.message ?: "执行失败") + "（mode=$mode）")
             }
-            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", fullCommand))
-            process.outputStream.close()
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                return@runCatching ShellResult(-1, stdout, stderr, timedOut = true)
-            }
-            ShellResult(process.exitValue(), stdout, stderr)
-        }.getOrElse {
-            ShellResult(-1, "", it.message ?: "root 执行失败")
+            awaitProcess(process, timeoutMillis)
         }
     }
 
-    /** 通过 Shizuku 执行 */
-    private fun executeShizuku(
-        command: String,
-        cwd: String?,
-        timeoutMillis: Long,
-    ): ShellResult {
-        if (!isShizukuAvailable()) {
-            return ShellResult(-1, "", "Shizuku 不可用")
+    private fun startNormal(command: String, cwd: String?): Process {
+        val b = ProcessBuilder("/system/bin/sh", "-c", command)
+        if (!cwd.isNullOrBlank()) b.directory(File(cwd))
+        b.environment()["PATH"] = HOST_PATH
+        val p = b.start(); runCatching { p.outputStream.close() }; return p
+    }
+
+    private fun startRoot(command: String, cwd: String?): Process {
+        val full = buildString {
+            if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" && ") }
+            append(command)
         }
-        return runCatching {
-            // Shizuku 通过 UserService 执行 shell
-            val shizukuClass = Class.forName("rikka.shizuku.Shizuku")
-            val binder = shizukuClass.getMethod("getBinder").invoke(null)
-            // 反射调用 ShizukuShell
-            val shellClazz = Class.forName("rikka.shizuku.ShizukuShell")
-            val processMethod = shellClazz.getMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
-            val cmd = arrayOf("/system/bin/sh", "-c", command)
-            val env = arrayOf("PATH=/sbin:/system/bin:/system/xbin")
-            val process = processMethod.invoke(null, cmd, env, cwd ?: "/") as Process
-            process.outputStream.close()
-            val stdout = process.inputStream.bufferedReader().readText()
-            val stderr = process.errorStream.bufferedReader().readText()
-            val finished = process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                return@runCatching ShellResult(-1, stdout, stderr, timedOut = true)
+        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", full))
+        runCatching { p.outputStream.close() }; return p
+    }
+
+    /** 通过 Shizuku.newProcess 执行（反射兼容 public/private）。 */
+    private fun startShizuku(command: String, cwd: String?): Process {
+        val clazz = Class.forName("rikka.shizuku.Shizuku")
+        val types = arrayOf(Array<String>::class.java, Array<String>::class.java, String::class.java)
+        val method = runCatching { clazz.getMethod("newProcess", *types) }
+            .getOrElse { clazz.getDeclaredMethod("newProcess", *types).apply { isAccessible = true } }
+        val cmd = arrayOf("/system/bin/sh", "-c", command)
+        val env = arrayOf("PATH=$HOST_PATH")
+        val p = method.invoke(null, cmd, env, cwd ?: "/") as Process
+        runCatching { p.outputStream.close() }; return p
+    }
+
+    private suspend fun awaitProcess(process: Process, timeoutMillis: Long): ShellResult {
+        val outBuf = StringBuilder(); val errBuf = StringBuilder()
+        val outT = daemonReader(process.inputStream, outBuf)
+        val errT = daemonReader(process.errorStream, errBuf)
+        val finished = try {
+            withTimeout(timeoutMillis) { while (process.isAlive) delay(25); true }
+        } catch (_: TimeoutCancellationException) { false }
+        catch (e: CancellationException) { killTree(process); throw e }
+        if (!finished) { killTree(process); runCatching { process.waitFor(2, TimeUnit.SECONDS) } }
+        outT.join(2_000); errT.join(2_000)
+        val code = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
+        return ShellResult(code, outBuf.toString(), errBuf.toString(), timedOut = !finished)
+    }
+
+    /** 取消/超时时杀掉整棵进程树（su/Shizuku 会 fork 子进程，单杀父不够）。 */
+    private fun killTree(process: Process) {
+        runCatching {
+            val pid = process.pid()
+            if (pid > 0) {
+                Runtime.getRuntime().exec(arrayOf(
+                    "/system/bin/sh", "-c",
+                    "pkill -9 -P $pid 2>/dev/null; kill -9 -$pid 2>/dev/null; kill -9 $pid 2>/dev/null"
+                )).waitFor(1500, TimeUnit.MILLISECONDS)
             }
-            ShellResult(process.exitValue(), stdout, stderr)
-        }.getOrElse {
-            ShellResult(-1, "", it.message ?: "shizuku 执行失败")
         }
+        runCatching { process.destroyForcibly() }
     }
 
-    /** 检查文件是否存在 */
-    suspend fun fileExists(path: String): Boolean {
-        val result = execute("test -e ${path.shellQuote()} && echo YES || echo NO")
-        return result.stdout.trim() == "YES"
+    private fun daemonReader(stream: InputStream, buf: StringBuilder): Thread {
+        val t = Thread {
+            runCatching {
+                stream.bufferedReader().use { r ->
+                    val c = CharArray(4096)
+                    while (true) { val n = r.read(c); if (n < 0) break; synchronized(buf) { buf.append(c, 0, n) } }
+                }
+            }
+        }
+        t.isDaemon = true; t.start(); return t
     }
 
-    /** 列出目录 */
+    suspend fun fileExists(path: String): Boolean =
+        execute("test -e ${path.shellQuote()} && echo YES || echo NO", mode = preferredMode()).stdout.trim() == "YES"
+
     suspend fun listDirectory(path: String): List<FileEntry> {
-        val result = execute(
-            "ls -la ${path.shellQuote()} 2>/dev/null | tail -n +2",
-            mode = ShellMode.NORMAL,
-        )
-        if (!result.isSuccess) return emptyList()
-        return result.stdout.lineSequence()
-            .filter { it.isNotBlank() }
-            .mapNotNull { line -> parseLsLine(line, path) }
-            .toList()
+        val r = execute("ls -la ${path.shellQuote()} 2>/dev/null | tail -n +2", mode = ShellMode.NORMAL)
+        if (!r.isSuccess) return emptyList()
+        return r.stdout.lineSequence().filter { it.isNotBlank() }.mapNotNull { parseLsLine(it, path) }.toList()
     }
 }
 
-/** 目录条目 */
-data class FileEntry(
-    val name: String,
-    val isDirectory: Boolean,
-    val sizeBytes: Long,
-    val path: String,
-)
+data class FileEntry(val name: String, val isDirectory: Boolean, val sizeBytes: Long, val path: String)
 
-/** 解析 ls -la 输出行 */
 private fun parseLsLine(line: String, basePath: String): FileEntry? {
-    // 格式: drwxr-xr-x 2 root root 4096 Jan 1 00:00 name
-    if (line.length < 50) return null
-    val typeChar = line.firstOrNull() ?: return null
+    if (line.length < 40) return null
+    val type = line.firstOrNull() ?: return null
     val name = line.substringAfterLast(" ").trim()
     if (name.isEmpty() || name == "." || name == "..") return null
-    val sizeStr = line.split(" ").filter { it.isNotBlank() }.getOrNull(4) ?: "0"
-    val size = sizeStr.toLongOrNull() ?: 0
-    val isDir = typeChar == 'd'
-    return FileEntry(
-        name = name,
-        isDirectory = isDir,
-        sizeBytes = size,
-        path = if (basePath.endsWith("/")) "$basePath$name" else "$basePath/$name",
-    )
+    val size = line.split(" ").filter { it.isNotBlank() }.getOrNull(4)?.toLongOrNull() ?: 0
+    return FileEntry(name, type == 'd', size, if (basePath.endsWith("/")) "$basePath$name" else "$basePath/$name")
 }
 
-/** shell 引用 */
-fun String.shellQuote(): String = "'${replace("'", "'\\''")}'"
+/** POSIX 单引号转义 */
+fun String.shellQuote(): String = "'" + replace("'", "'\\''") + "'"

@@ -142,6 +142,8 @@ fun ChatInput(
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
+    // 键盘回车回调（始终发送/入队，不区分 loading）
+    onEnterSend: (() -> Unit)? = null,
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -165,13 +167,20 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading && state.isEmpty()) onCancelClick() else onSendClick()
+        if (loading) onCancelClick() else onSendClick()
+    }
+
+    // 回车发送：即使正在生成也加入队列，不停止生成
+    fun sendMessageOnEnter() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSendClick()
     }
 
     fun sendMessageWithoutAnswer() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
-        if (loading && state.isEmpty()) onCancelClick() else onLongSendClick()
+        if (loading) onCancelClick() else onLongSendClick()
     }
 
     val asr = LocalASRState.current
@@ -272,6 +281,7 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        onEnterSend = { sendMessageOnEnter() },
                     )
 
                     Row(
@@ -378,7 +388,7 @@ private fun SendButton(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val showStop = loading && empty
+    val showStop = loading
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
         empty -> MaterialTheme.colorScheme.surfaceContainerHigh
@@ -442,6 +452,7 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    onEnterSend: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -591,7 +602,7 @@ private fun TextInputRow(
             ),
             onKeyboardAction = {
                 if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
-                    onSendMessage()
+                    onEnterSend()
                 }
             },
             colors = TextFieldDefaults.colors().copy(

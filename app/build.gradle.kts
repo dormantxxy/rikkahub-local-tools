@@ -9,6 +9,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.firebase.crashlytics)
     alias(libs.plugins.baselineprofile)
 }
 
@@ -24,13 +26,13 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        versionCode = 194
+        versionCode = 194 + (System.getenv("RIKKAHUB_VERSION_BUMP")?.toIntOrNull() ?: 0)
         versionName = "3.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 
@@ -41,32 +43,36 @@ android {
             val isBuildingBundle = gradle.startParameter.taskNames.any { it.lowercase().contains("bundle") }
             isEnable = !isBuildingBundle
             reset()
-            include("arm64-v8a")
+            include("arm64-v8a", "x86_64")
             isUniversalApk = true
         }
     }
 
     signingConfigs {
         create("release") {
+            // 固定签名：仓库内 app/keystore/release.keystore（每版一致，可覆盖安装）
+            val bundled = rootProject.file("app/keystore/release.keystore")
+            var storeFilePath: String? = bundled.takeIf { it.exists() }?.absolutePath
+            var storePasswordValue = "android"
+            var keyAliasValue = "androiddebugkey"
+            var keyPasswordValue = "android"
+
             val localProperties = Properties()
             val localPropertiesFile = rootProject.file("local.properties")
-
             if (localPropertiesFile.exists()) {
                 localProperties.load(FileInputStream(localPropertiesFile))
+                localProperties.getProperty("storeFile")?.let { storeFilePath = it }
+                localProperties.getProperty("storePassword")?.let { storePasswordValue = it }
+                localProperties.getProperty("keyAlias")?.let { keyAliasValue = it }
+                localProperties.getProperty("keyPassword")?.let { keyPasswordValue = it }
+            }
 
-                val storeFilePath = localProperties.getProperty("storeFile")
-                val storePasswordValue = localProperties.getProperty("storePassword")
-                val keyAliasValue = localProperties.getProperty("keyAlias")
-                val keyPasswordValue = localProperties.getProperty("keyPassword")
-
-                if (storeFilePath != null && storePasswordValue != null &&
-                    keyAliasValue != null && keyPasswordValue != null
-                ) {
-                    storeFile = file(storeFilePath)
-                    storePassword = storePasswordValue
-                    keyAlias = keyAliasValue
-                    keyPassword = keyPasswordValue
-                }
+            val resolvedStoreFile = storeFilePath
+            if (resolvedStoreFile != null) {
+                storeFile = file(resolvedStoreFile)
+                storePassword = storePasswordValue
+                keyAlias = keyAliasValue
+                keyPassword = keyPasswordValue
             }
         }
     }
@@ -190,6 +196,8 @@ configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configu
 
 dependencies {
     implementation(libs.quickjs)
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.process)
@@ -219,6 +227,9 @@ dependencies {
     implementation(libs.androidx.material3.adaptive.navigation3)
 
     // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.crashlytics)
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
@@ -341,10 +352,6 @@ dependencies {
     implementation(project(":terminal"))
     implementation(project(":oauth"))
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
-
-    // Shizuku（root 替代方案）：让本 app 出现在 Shizuku 授权列表
-    implementation("dev.rikka.shizuku:api:13.1.5")
-    implementation("dev.rikka.shizuku:provider:13.1.5")
 
     // Leak Canary
     // debugImplementation(libs.leakcanary.android)

@@ -18,6 +18,9 @@ sealed class AppEvent {
      * 聊天生成结束（完成、失败或取消）。
      * [contentPreview] 为 null 时仅取消 Live Update 通知，不发送完成通知。
      */
+    /** Shizuku 授权结果更新（授权成功/失败后刷新工具链权限状态）。 */
+    data class ShizukuPermissionUpdated(val granted: Boolean) : AppEvent()
+
     data class ChatGenerationEnded(
         val conversationId: Uuid,
         val senderName: String,

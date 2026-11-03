@@ -1,13 +1,17 @@
 package me.rerere.rikkahub.di
 
+import com.google.firebase.Firebase
+import com.google.firebase.analytics.analytics
+import com.google.firebase.crashlytics.crashlytics
 import kotlinx.serialization.json.Json
 import me.rerere.rikkahub.AppScope
 import me.rerere.rikkahub.data.ai.ChatRequestFactory
 import me.rerere.rikkahub.data.ai.tools.ChatToolFactory
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
-import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.data.localtools.LocalToolsManager
+import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
+import me.rerere.rikkahub.data.localtools.ToolchainExecutor
+import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -31,6 +35,12 @@ val appModule = module {
     }
 
     single {
+        ShellExecutor(get())
+    }
+
+    single { ExtensionInstaller(get(), get()) }
+    single { ToolchainExecutor(get(), get(), get()) }
+    single {
         LocalTools(get(), get(), get(), get(), get(), get())
     }
 
@@ -53,7 +63,13 @@ val appModule = module {
         TTSManager(get())
     }
 
+    single {
+        Firebase.crashlytics
+    }
 
+    single {
+        Firebase.analytics
+    }
 
     single {
         SoundEffectPlayer(get())
@@ -155,19 +171,6 @@ val appModule = module {
             folderRepo = get(),
             settingsStore = get(),
             filesManager = get()
-        )
-    }
-
-    // 本地工具
-    single {
-        ShellExecutor(context = get())
-    }
-
-    single {
-        LocalToolsManager(
-            context = get(),
-            settingsStore = get(),
-            shellExecutor = get(),
         )
     }
 }

@@ -194,7 +194,7 @@ fun ChatDrawerContent(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (updateChecksEnabled && !BuildConfig.IS_PLAY_STORE) {
+            if (false) { // update check disabled
                 UpdateCard(vm)
             }
 

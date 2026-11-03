@@ -46,10 +46,6 @@ sealed class LocalToolOption {
     data object Files : LocalToolOption()
 
     @Serializable
-    @SerialName("cli")
-    data object Cli : LocalToolOption()
-
-    @Serializable
     @SerialName("web_fetch")
     data object WebFetch : LocalToolOption()
 
@@ -61,5 +57,8 @@ sealed class LocalToolOption {
     @SerialName("file_tree")
     data object FileTree : LocalToolOption()
 
-
+    /** 原生工具链 CLI（run_cli）：在聚合后的多扩展环境里执行命令。 */
+    @Serializable
+    @SerialName("cli")
+    data object Cli : LocalToolOption()
 }

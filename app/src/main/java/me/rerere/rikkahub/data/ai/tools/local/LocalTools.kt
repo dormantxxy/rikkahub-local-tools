@@ -4,10 +4,8 @@ import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.rikkahub.data.localtools.ToolLogEntry
-import me.rerere.rikkahub.data.localtools.ToolLogStore
+import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.tts.provider.TTSManager
 
 class LocalTools(
@@ -16,8 +14,11 @@ class LocalTools(
     private val ttsManager: TTSManager,
     private val settingsStore: SettingsStore,
     private val shellExecutor: ShellExecutor,
-    private val toolsManager: LocalToolsManager,
+    private val toolchainExecutor: ToolchainExecutor,
 ) {
+    private val defaultDir = context.filesDir.absolutePath
+    private val rikkahubWorkDir = java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
+
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
     val clipboardTool by lazy { buildClipboardTool(context) }
@@ -28,15 +29,13 @@ class LocalTools(
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
     val chartDisplayTool by lazy { buildChartDisplayTool() }
 
-    val runShellTool by lazy { buildRunShellTool(shellExecutor, settingsStore, context.filesDir.absolutePath) }
-    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, settingsStore) }
-    fun runCliTool() = buildRunCliTool(
-        shellExecutor, toolsManager, settingsStore,
-        context.filesDir.absolutePath, toolsManager.installedCommands(),
-    )
+    // ===== 本地工具（设备 Shell / 文件 / 检索 / 文件树 / 网页浏览 / CLI 工具链） =====
+    val runShellTool by lazy { buildRunShellTool(shellExecutor, defaultDir) }
+    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor) }
+    val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, defaultDir) }
+    val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, defaultDir) }
     val webFetchTool by lazy { buildWebFetchTool() }
-    val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, toolsManager, settingsStore) }
-    val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, toolsManager, settingsStore) }
+    val runCliTool by lazy { buildRunCliTool(toolchainExecutor, rikkahubWorkDir) }
 
     fun getTools(options: List<LocalToolOption>): List<Tool> {
         val tools = mutableListOf<Tool>()
@@ -51,49 +50,12 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        // 设备 Shell / 文件管理需要 root 或 Shizuku；CLI / 检索走内置 proot，不需要权限
-        val privileged = shellExecutor.hasPrivilege()
-        if (privileged && options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
-        if (privileged && options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
-        if (options.contains(LocalToolOption.Cli)) tools.add(runCliTool())
+        if (options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
+        if (options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
         if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
         if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
-        return tools.map { it.logged() }
-    }
-
-    /** 记录每次工具调用的参数/结果/耗时，供「任务计划」面板查看 */
-    private fun Tool.logged(): Tool {
-        val origin = this
-        return origin.copy(
-            execute = { args ->
-                val start = System.currentTimeMillis()
-                try {
-                    val result = origin.execute(args)
-                    val summary = result.joinToString("\n") { it.toString() }
-                    ToolLogStore.add(
-                        ToolLogEntry(
-                            tool = origin.name,
-                            args = args.toString().take(500),
-                            result = summary.take(500),
-                            ok = true,
-                            durationMs = System.currentTimeMillis() - start,
-                        )
-                    )
-                    result
-                } catch (e: Throwable) {
-                    ToolLogStore.add(
-                        ToolLogEntry(
-                            tool = origin.name,
-                            args = args.toString().take(500),
-                            result = (e.message ?: e.javaClass.simpleName).take(500),
-                            ok = false,
-                            durationMs = System.currentTimeMillis() - start,
-                        )
-                    )
-                    throw e
-                }
-            }
-        )
+        if (options.contains(LocalToolOption.Cli)) tools.add(runCliTool)
+        return tools
     }
 }

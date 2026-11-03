@@ -5,7 +5,6 @@ import android.util.Log
 import androidx.annotation.StringRes
 import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -100,29 +99,6 @@ data class ChatError(
 
 enum class ChatErrorSolution {
     CheckFastModelSettings,
-}
-
-/** 自动恢复可识别的错误类型 */
-enum class AutoErrorKind { NETWORK, THINKING_INTERRUPTED, CONTEXT_OVERFLOW, UNKNOWN }
-
-private const val MAX_AUTO_ATTEMPTS = 2
-
-private fun classifyError(error: Throwable): AutoErrorKind {
-    val m = ((error.message ?: "") + " " + error.javaClass.simpleName).lowercase()
-    return when {
-        error is java.net.UnknownHostException -> AutoErrorKind.NETWORK
-        error is java.net.SocketTimeoutException -> AutoErrorKind.NETWORK
-        error is java.net.ConnectException -> AutoErrorKind.NETWORK
-        error is java.io.IOException -> AutoErrorKind.NETWORK
-        m.contains("context length") || m.contains("maximum context") ||
-            m.contains("too many tokens") || m.contains("token limit") ||
-            m.contains("context_length_exceeded") || m.contains("reduce the length") ||
-            m.contains("上下文") -> AutoErrorKind.CONTEXT_OVERFLOW
-        m.contains("thinking") || m.contains("reasoning") || m.contains("思考") -> AutoErrorKind.THINKING_INTERRUPTED
-        m.contains("timeout") || m.contains("network") || m.contains("connect") ||
-            m.contains("reset") || m.contains("unreachable") || m.contains("网络") -> AutoErrorKind.NETWORK
-        else -> AutoErrorKind.UNKNOWN
-    }
 }
 
 class ChatService(
@@ -500,50 +476,10 @@ class ChatService(
     }
 
     // 发送、重新生成和审批失败时报告错误并暂停队列，排队的消息等用户处理完再继续
-    // 若开启自动化且未超过重试上限，先按错误类型自动恢复（手动中断 CancellationException 永远不处理）
-    private fun reportFailure(
-        session: ConversationSession,
-        error: Exception,
-        @StringRes title: Int,
-        autoAttempt: Int = 0,
-    ) {
+    private fun reportFailure(session: ConversationSession, error: Exception, @StringRes title: Int) {
         if (error is CancellationException) throw error
         session.messageQueue.pause()
-
-        val automation = runCatching { settingsStore.settingsFlow.value.automationConfig }.getOrNull()
-        if (automation != null && automation.enabled && autoAttempt < MAX_AUTO_ATTEMPTS) {
-            val shouldAuto = when (classifyError(error)) {
-                AutoErrorKind.NETWORK -> automation.autoRetryNetwork
-                AutoErrorKind.THINKING_INTERRUPTED -> automation.autoResumeThinking
-                AutoErrorKind.CONTEXT_OVERFLOW -> automation.autoRecoverContext
-                AutoErrorKind.UNKNOWN -> false
-            }
-            if (shouldAuto) {
-                scheduleAutoRecovery(session, title, autoAttempt)
-                return
-            }
-        }
-
         addError(error, session.id, title = context.getString(title))
-    }
-
-    // 延迟后继续生成；失败会带着递增的 autoAttempt 再走一次 reportFailure
-    private fun scheduleAutoRecovery(
-        session: ConversationSession,
-        @StringRes title: Int,
-        autoAttempt: Int,
-    ) {
-        appScope.launch {
-            delay(1_500L * (autoAttempt + 1))
-            try {
-                session.messageQueue.resume()
-                runTurn(session)
-                _generationDoneFlow.emit(session.id)
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                reportFailure(session, e, title, autoAttempt + 1)
-            }
-        }
     }
 
     // ---- 重新生成消息 ----
@@ -1311,7 +1247,7 @@ class ChatService(
             session.cancelJobs()
         }
         if (jobs.isEmpty()) return
-        jobs.forEach { it.join() }
+        jobs.forEach { job -> kotlinx.coroutines.withTimeoutOrNull(2500) { job.join() } }
         if (session.isInitialized) finishInterruptedPendingTools(session)
     }
 }

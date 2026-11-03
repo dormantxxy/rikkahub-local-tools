@@ -4,33 +4,19 @@ import android.Manifest
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -38,28 +24,23 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
+import me.rerere.ui.toast.ToastType
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Calendar03
 import me.rerere.hugeicons.stroke.ChartLineData01
-import me.rerere.hugeicons.stroke.ClipboardPaste
-import me.rerere.hugeicons.stroke.Clock01
+import me.rerere.hugeicons.stroke.Code
 import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Earth
-import me.rerere.hugeicons.stroke.Package
-import me.rerere.hugeicons.stroke.Code
-import me.rerere.hugeicons.stroke.CheckList
 import me.rerere.hugeicons.stroke.FolderOpen
+import me.rerere.hugeicons.stroke.Package
+import me.rerere.hugeicons.stroke.ClipboardPaste
+import me.rerere.hugeicons.stroke.Clock01
 import me.rerere.hugeicons.stroke.JavaScript
 import me.rerere.hugeicons.stroke.MessageQuestion
 import me.rerere.hugeicons.stroke.SmartPhone01
-import me.rerere.hugeicons.stroke.Tools
 import me.rerere.hugeicons.stroke.VolumeHigh
 import me.rerere.rikkahub.R
-import me.rerere.rikkahub.Screen
-import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.data.ai.tools.local.LocalToolOption
-import me.rerere.rikkahub.data.localtools.LocalToolsManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.ui.components.nav.BackButton
 import me.rerere.rikkahub.ui.components.ui.CardGroup
@@ -73,15 +54,15 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
-import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
-import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
 
 @Composable
 fun AssistantLocalToolPage(id: String) {
     val vm: AssistantDetailVM = koinViewModel(
-        parameters = { parametersOf(id) }
+        parameters = {
+            parametersOf(id)
+        }
     )
     val assistant by vm.assistant.collectAsStateWithLifecycle()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -89,8 +70,12 @@ fun AssistantLocalToolPage(id: String) {
     Scaffold(
         topBar = {
             LargeFlexibleTopAppBar(
-                title = { Text(stringResource(R.string.assistant_page_tab_local_tools)) },
-                navigationIcon = { BackButton() },
+                title = {
+                    Text(stringResource(R.string.assistant_page_tab_local_tools))
+                },
+                navigationIcon = {
+                    BackButton()
+                },
                 scrollBehavior = scrollBehavior,
                 colors = CustomColors.topBarColors,
             )
@@ -101,7 +86,7 @@ fun AssistantLocalToolPage(id: String) {
         AssistantLocalToolContent(
             innerPadding = innerPadding,
             assistant = assistant,
-            onUpdate = { vm.update(it) },
+            onUpdate = { vm.update(it) }
         )
     }
 }
@@ -110,25 +95,12 @@ fun AssistantLocalToolPage(id: String) {
 private fun AssistantLocalToolContent(
     innerPadding: PaddingValues,
     assistant: Assistant,
-    onUpdate: (Assistant) -> Unit,
+    onUpdate: (Assistant) -> Unit
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
-
-    val toolsManager: LocalToolsManager = koinInject()
-    val scope = rememberCoroutineScope()
-
-    // 只支持 root / shizuku：无权限时 CLI 相关不可用
-    var hasPriv by remember { mutableStateOf(false) }
-    val navController = LocalNavController.current
-
-    LaunchedEffect(Unit) {
-        hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable()
-        toolsManager.refreshPackages()
-        toolsManager.refreshPackages()
-    }
 
     val calendarPermissionState = rememberPermissionState(
         permissions = setOf(
@@ -136,13 +108,13 @@ private fun AssistantLocalToolContent(
                 permission = Manifest.permission.READ_CALENDAR,
                 displayName = { Text(stringResource(R.string.permission_calendar_read)) },
                 usage = { Text(stringResource(R.string.permission_calendar_read_desc)) },
-                required = true,
+                required = true
             ),
             PermissionInfo(
                 permission = Manifest.permission.WRITE_CALENDAR,
                 displayName = { Text(stringResource(R.string.permission_calendar_write)) },
                 usage = { Text(stringResource(R.string.permission_calendar_write_desc)) },
-                required = true,
+                required = true
             ),
         )
     )
@@ -157,7 +129,11 @@ private fun AssistantLocalToolContent(
             calendarPermissionState.requestPermissions()
             return
         }
-        val newLocalTools = if (enabled) assistant.localTools + option else assistant.localTools - option
+        val newLocalTools = if (enabled) {
+            assistant.localTools + option
+        } else {
+            assistant.localTools - option
+        }
         onUpdate(assistant.copy(localTools = newLocalTools))
     }
 
@@ -171,6 +147,7 @@ private fun AssistantLocalToolContent(
         switchItem(
             checked = checked,
             onCheckedChange = { toggleLocalTool(option, it) },
+            // 图标底色跟着开关状态变化
             leadingContent = {
                 CardGroupIcon(
                     icon = icon,
@@ -191,7 +168,7 @@ private fun AssistantLocalToolContent(
         )
     }
 
-    fun CardGroupScope.toolItemStr(
+    fun CardGroupScope.toolItemRaw(
         option: LocalToolOption,
         icon: ImageVector,
         title: String,
@@ -204,16 +181,8 @@ private fun AssistantLocalToolContent(
             leadingContent = {
                 CardGroupIcon(
                     icon = icon,
-                    containerColor = if (checked) {
-                        MaterialTheme.colorScheme.primaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.surfaceContainerHigh
-                    },
-                    contentColor = if (checked) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    containerColor = if (checked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (checked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
             supportingContent = { Text(description) },
@@ -229,9 +198,8 @@ private fun AssistantLocalToolContent(
             .padding(innerPadding)
             .padding(bottom = 16.dp)
             .imePadding(),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // ===== AI 可调用工具 =====
         CardGroup {
             toolItem(
                 option = LocalToolOption.JavascriptEngine,
@@ -281,73 +249,12 @@ private fun AssistantLocalToolContent(
                 title = R.string.assistant_page_local_tools_chart_display_title,
                 description = R.string.assistant_page_local_tools_chart_display_desc,
             )
-            toolItemStr(
-                option = LocalToolOption.Shell,
-                icon = HugeIcons.ComputerTerminal01,
-                title = "设备 Shell",
-                description = "执行任意 shell 命令，权限自动 root > shizuku > 普通",
-            )
-            toolItemStr(
-                option = LocalToolOption.Files,
-                icon = HugeIcons.FolderOpen,
-                title = "文件管理",
-                description = "浏览/读写/复制/移动/删除/搜索文件，支持 root/shizuku/普通",
-            )
-            toolItemStr(
-                option = LocalToolOption.Cli,
-                icon = HugeIcons.Tools,
-                title = "CLI 工具 (git/python/node/ssh)",
-                description = "在扩展包 / 完整 Linux 环境里调用命令行工具（git/python/node/ssh）",
-            )
-            toolItemStr(
-                option = LocalToolOption.WebFetch,
-                icon = HugeIcons.Earth,
-                title = "网页浏览",
-                description = "抓取网页/接口（GET/POST/headers）返回可读文本，无需前台渲染",
-            )
-            toolItemStr(
-                option = LocalToolOption.SearchCode,
-                icon = HugeIcons.Code,
-                title = "代码检索",
-                description = "在项目里按关键字搜索，返回 文件:行:内容",
-            )
-            toolItemStr(
-                option = LocalToolOption.FileTree,
-                icon = HugeIcons.FolderOpen,
-                title = "文件树",
-                description = "列出项目目录结构，便于 AI 快速定位文件",
-            )
-        }
-
-        // ===== 权限提示 =====
-        if (!hasPriv) {
-            CardGroup(title = { Text("权限不足") }) {
-                item(
-                    headlineContent = { Text("需要 root 或 Shizuku") },
-                    supportingContent = { Text("仅「设备 Shell」「文件管理」需要 root 或 Shizuku。CLI 与扩展商店（内置 Linux 环境）不需要权限，可直接用。") },
-                    trailingContent = {
-                        TextButton(onClick = { scope.launch { hasPriv = toolsManager.isRootAvailable() || toolsManager.isShizukuAvailable() } }) {
-                            Text("重新检测")
-                        }
-                    },
-                )
-            }
-        }
-
-        // ===== 扩展管理入口 =====
-        CardGroup(title = { Text("扩展管理") }) {
-            item(
-                leadingContent = {
-                    CardGroupIcon(
-                        icon = HugeIcons.Package,
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                    )
-                },
-                headlineContent = { Text("扩展商店") },
-                supportingContent = { Text("安装 Linux 环境 + 67 个 CLI 扩展（git/python/node/ffmpeg…）") },
-                onClick = { navController.navigate(Screen.ToolStore) },
-            )
+            toolItemRaw(option = LocalToolOption.Shell, icon = HugeIcons.ComputerTerminal01, title = "设备 Shell", description = "在设备上执行 shell 命令（有 root 用 su）")
+            toolItemRaw(option = LocalToolOption.Cli, icon = HugeIcons.ComputerTerminal01, title = "CLI 工具链", description = "在原生工具链环境执行命令（git/python3/node/gcc/apktool/java…）")
+            toolItemRaw(option = LocalToolOption.Files, icon = HugeIcons.Package, title = "文件管理", description = "浏览/读写/复制/移动/删除/搜索文件")
+            toolItemRaw(option = LocalToolOption.SearchCode, icon = HugeIcons.Code, title = "代码检索", description = "在目录里按关键字搜索文件内容")
+            toolItemRaw(option = LocalToolOption.FileTree, icon = HugeIcons.FolderOpen, title = "文件树", description = "列出目录结构")
+            toolItemRaw(option = LocalToolOption.WebFetch, icon = HugeIcons.Earth, title = "网页浏览", description = "后台抓取网页正文（不渲染）")
         }
     }
 }

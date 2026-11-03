@@ -1,11 +1,13 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.zip.GZIPInputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -14,171 +16,122 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
- * Web 浏览工具：抓取网页/接口（支持 GET/POST、headers、body），
- * 后台转换为可读文本，并提取标题与链接。无需前台渲染。
+ * 网页抓取（增强版）：支持重定向、gzip 解压、charset 自适应、标题/正文/链接提取、超时与大小限制。
  */
 internal fun buildWebFetchTool(): Tool = Tool(
-    name = "fetch_web_page",
-    description = """
-        Fetch a web page or HTTP API in the background (no UI). Supports method GET/POST/PUT/DELETE,
-        custom headers, request body. Returns status, content_type, title, readable text (HTML stripped),
-        and extracted links. Params: url (required), method, headers (JSON object string), body,
-        max_chars (default 12000), include_links (default true).
-    """.trimIndent().replace("\n", " "),
+    name = "web_fetch",
+    description = "Fetch a web page/API and return readable content. Handles redirects, gzip, charset. " +
+        "Params: url(required), max_chars(optional default 8000), include_links(optional default false), raw(optional default false to strip HTML).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
-                put("url", buildJsonObject {
-                    put("type", "string")
-                    put("description", "Full http(s) URL")
-                })
-                put("method", buildJsonObject {
-                    put("type", "string")
-                    put("description", "HTTP method: GET (default), POST, PUT, DELETE")
-                })
-                put("headers", buildJsonObject {
-                    put("type", "string")
-                    put("description", "Optional JSON object of headers, e.g. {\"Authorization\":\"Bearer x\"}")
-                })
-                put("body", buildJsonObject {
-                    put("type", "string")
-                    put("description", "Optional request body (for POST/PUT)")
-                })
-                put("max_chars", buildJsonObject {
-                    put("type", "number")
-                    put("description", "Max characters of text to return (default 12000)")
-                })
-                put("include_links", buildJsonObject {
-                    put("type", "boolean")
-                    put("description", "Whether to extract links (default true)")
-                })
+                put("url", buildJsonObject { put("type", "string"); put("description", "http(s) URL") })
+                put("max_chars", buildJsonObject { put("type", "number"); put("description", "Max chars to return (default 8000)") })
+                put("include_links", buildJsonObject { put("type", "boolean"); put("description", "Include extracted links (default false)") })
+                put("raw", buildJsonObject { put("type", "boolean"); put("description", "Return raw body without HTML stripping") })
             },
-            required = listOf("url")
+            required = listOf("url"),
         )
     },
     execute = {
-        val params = it.jsonObject
-        val url = params["url"]?.jsonPrimitive?.contentOrNull ?: error("url is required")
-        val method = (params["method"]?.jsonPrimitive?.contentOrNull ?: "GET").uppercase()
-        val headersJson = params["headers"]?.jsonPrimitive?.contentOrNull
-        val body = params["body"]?.jsonPrimitive?.contentOrNull
-        val maxChars = (params["max_chars"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 12_000)
-            .coerceIn(500, 100_000)
-        val includeLinks = params["include_links"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: true
+        val p = it.jsonObject
+        val url = p["url"]?.jsonPrimitive?.contentOrNull ?: error("url is required")
+        val maxChars = (p["max_chars"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 8000).coerceIn(200, 200_000)
+        val includeLinks = p["include_links"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        val raw = p["raw"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
 
-        val headers: Map<String, String> = runCatching {
-            if (headersJson.isNullOrBlank()) emptyMap()
-            else Json.parseToJsonElement(headersJson).jsonObject.entries.associate { (k, v) ->
-                k to (v.jsonPrimitive.contentOrNull ?: v.toString())
-            }
-        }.getOrDefault(emptyMap())
-
-        val (status, contentType, rawBody) = withContext(Dispatchers.IO) {
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.connectTimeout = 20_000
-            conn.readTimeout = 40_000
-            conn.instanceFollowRedirects = true
-            conn.requestMethod = method
-            conn.setRequestProperty(
-                "User-Agent",
-                "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36"
-            )
-            conn.setRequestProperty("Accept", "text/html,application/json,text/plain,*/*")
-            headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
-            if (!body.isNullOrEmpty() && method != "GET") {
-                conn.doOutput = true
-                if (!headers.keys.any { it.equals("Content-Type", ignoreCase = true) }) {
-                    conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+        val payload = withContext(Dispatchers.IO) {
+            runCatching {
+                var current = url
+                var conn: HttpURLConnection
+                var code: Int
+                var redirects = 0
+                while (true) {
+                    conn = (URL(current).openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 20_000; readTimeout = 40_000
+                        instanceFollowRedirects = false
+                        requestMethod = "GET"
+                        setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) RikkaHub")
+                        setRequestProperty("Accept", "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8")
+                        setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                        setRequestProperty("Accept-Encoding", "gzip")
+                    }
+                    code = conn.responseCode
+                    val loc = conn.getHeaderField("Location")
+                    if (code in 300..399 && loc != null && redirects < 8) {
+                        current = URL(URL(current), loc).toString()
+                        conn.disconnect(); redirects++; continue
+                    }
+                    break
                 }
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            }
-            try {
-                val code = conn.responseCode
-                val ct = conn.contentType ?: ""
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val text = stream?.bufferedReader()?.use { r -> r.readText() } ?: ""
-                Triple(code, ct, text)
-            } finally {
+                val stream0 = if (code in 200..299) conn.inputStream else conn.errorStream
+                val stream = if ((conn.contentEncoding ?: "").contains("gzip", true) && stream0 != null)
+                    GZIPInputStream(stream0) else stream0
+                val bytes = stream?.use { s ->
+                    val bos = ByteArrayOutputStream(); val buf = ByteArray(64 * 1024)
+                    var total = 0
+                    while (true) { val n = s.read(buf); if (n < 0) break; total += n; if (total > 5_000_000) break; bos.write(buf, 0, n) }
+                    bos.toByteArray()
+                } ?: ByteArray(0)
+                val contentType = conn.contentType ?: ""
+                var charset = Regex("charset=([A-Za-z0-9_\\-]+)", RegexOption.IGNORE_CASE).find(contentType)?.groupValues?.getOrNull(1)
                 conn.disconnect()
+                val rawText = decode(bytes, charset)
+                val isHtml = contentType.contains("html", true) || rawText.trimStart().startsWith("<")
+                val title = if (isHtml) Regex("(?is)<title[^>]*>(.*?)</title>").find(rawText)?.groupValues?.getOrNull(1)?.trim() else null
+                val text = if (raw || !isHtml) rawText else stripHtml(rawText)
+                val links = if (includeLinks && isHtml) extractLinks(rawText) else emptyList()
+                Fetched(code, contentType, current, title, text, links)
             }
         }
 
-        val isHtml = contentType.contains("html", ignoreCase = true) || rawBody.trimStart().startsWith("<")
-        val text = if (isHtml) htmlToText(rawBody) else rawBody
-        val title = if (isHtml) extractTitle(rawBody) else null
-        val payload = buildJsonObject {
-            put("url", url)
-            put("method", method)
-            put("status", status)
-            put("content_type", contentType)
-            title?.let { put("title", it) }
-            put("truncated", text.length > maxChars)
-            put("text", text.take(maxChars))
-            if (includeLinks && isHtml) {
-                put("links", buildJsonArray {
-                    extractLinks(url, rawBody).take(50).forEach { add(kotlinx.serialization.json.JsonPrimitive(it)) }
-                })
+        val out = payload.map { f ->
+            buildJsonObject {
+                put("status", f.status); put("content_type", f.contentType); put("final_url", f.finalUrl)
+                f.title?.let { put("title", it) }
+                put("text", f.text.take(maxChars))
+                if (includeLinks) {
+                    put("links", buildJsonArray { f.links.take(200).forEach { add(it) } })
+                }
             }
-        }
-        listOf(UIMessagePart.Text(payload.toString()))
+        }.getOrElse { e -> buildJsonObject { put("error", e.message ?: e.javaClass.simpleName) } }
+        listOf(UIMessagePart.Text(out.toString()))
     }
 )
 
-private val SCRIPT_STYLE_REGEX = Regex(
-    "<script[^>]*>[\\s\\S]*?</script>|<style[^>]*>[\\s\\S]*?</style>",
-    RegexOption.IGNORE_CASE
+private data class Fetched(
+    val status: Int,
+    val contentType: String,
+    val finalUrl: String,
+    val title: String?,
+    val text: String,
+    val links: List<String>,
 )
-private val COMMENT_REGEX = Regex("<!--[\\s\\S]*?-->")
-private val BLOCK_TAG_REGEX = Regex(
-    "</(p|div|br|li|tr|h[1-6]|section|article|header|footer|table|ul|ol)>",
-    RegexOption.IGNORE_CASE
-)
-private val TAG_REGEX = Regex("<[^>]+>")
-private val MULTI_SPACE_REGEX = Regex("[ \\t\\u00A0]+")
-private val MULTI_NEWLINE_REGEX = Regex("\\n\\s*\\n+")
-private val TITLE_REGEX = Regex("<title[^>]*>([\\s\\S]*?)</title>", RegexOption.IGNORE_CASE)
-private val LINK_REGEX = Regex("<a[^>]+href=[\"']([^\"'#]+)[\"']", RegexOption.IGNORE_CASE)
 
-private fun htmlToText(html: String): String {
-    var s = html
-    s = COMMENT_REGEX.replace(s, " ")
-    s = SCRIPT_STYLE_REGEX.replace(s, " ")
-    s = BLOCK_TAG_REGEX.replace(s, "\n")
-    s = TAG_REGEX.replace(s, " ")
-    s = unescapeHtml(s)
-    s = MULTI_SPACE_REGEX.replace(s, " ")
-    s = MULTI_NEWLINE_REGEX.replace(s, "\n\n")
-    return s.trim()
+private fun decode(bytes: ByteArray, charsetName: String?): String {
+    val candidates = listOfNotNull(charsetName, "UTF-8", "GBK").distinct()
+    for (cs in candidates) {
+        runCatching { return String(bytes, charset(cs)) }
+    }
+    return String(bytes, Charsets.UTF_8)
 }
 
-private fun extractTitle(html: String): String? =
-    TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.let { unescapeHtml(it).trim() }?.takeIf { it.isNotBlank() }
+private fun extractLinks(html: String): List<String> =
+    Regex("(?is)href\\s*=\\s*[\"']([^\"'#]+)[\"']").findAll(html)
+        .mapNotNull { it.groupValues.getOrNull(1)?.trim() }
+        .filter { it.startsWith("http://") || it.startsWith("https://") || it.startsWith("/") }
+        .distinct().take(200).toList()
 
-private fun extractLinks(baseUrl: String, html: String): List<String> {
-    val base = runCatching { URL(baseUrl) }.getOrNull() ?: return emptyList()
-    return LINK_REGEX.findAll(html).mapNotNull { m ->
-        val href = m.groupValues.getOrNull(1)?.trim() ?: return@mapNotNull null
-        when {
-            href.startsWith("http://") || href.startsWith("https://") -> href
-            href.startsWith("//") -> base.protocol + ":" + href
-            href.startsWith("/") -> "${base.protocol}://${base.authority}$href"
-            else -> runCatching { URL(base, href).toString() }.getOrNull()
-        }
-    }.distinct().toList()
+private fun stripHtml(html: String): String {
+    var s = html.replace(Regex("(?is)<script.*?</script>"), " ")
+        .replace(Regex("(?is)<style.*?</style>"), " ")
+        .replace(Regex("(?is)<noscript.*?</noscript>"), " ")
+        .replace(Regex("(?is)<head.*?</head>"), " ")
+        .replace(Regex("(?s)<[^>]+>"), " ")
+    s = s.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+        .replace("&quot;", "\"").replace("&#39;", "'")
+    s = s.replace(Regex("[ \\t\\x0B\\f\\r]+"), " ").replace(Regex("\\n\\s*\\n+"), "\n").trim()
+    return s
 }
-
-private fun unescapeHtml(s: String): String = s
-    .replace("&nbsp;", " ")
-    .replace("&amp;", "&")
-    .replace("&lt;", "<")
-    .replace("&gt;", ">")
-    .replace("&quot;", "\"")
-    .replace("&#39;", "'")
-    .replace("&apos;", "'")
-    .replace("&mdash;", "—")
-    .replace("&ndash;", "–")
-    .replace("&hellip;", "…")
