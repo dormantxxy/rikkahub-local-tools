@@ -94,6 +94,7 @@ internal fun searchFiles(
             if (results.size >= maxResults) break
             if (!file.isFile || file.length() > maxFileSize) continue
             if (includeRegex != null && !includeRegex.matches(file.name)) continue
+            if (!isLikelyTextFile(file)) continue
             scanned++
             try {
                 file.useLines { lines ->

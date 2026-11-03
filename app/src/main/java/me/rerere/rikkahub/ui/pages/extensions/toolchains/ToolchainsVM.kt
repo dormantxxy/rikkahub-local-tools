@@ -153,8 +153,7 @@ class ToolchainsVM(
     val privilege: StateFlow<String> = _privilege.asStateFlow()
 
     init {
-        // 预加载 Termux 在线索引（打开商店即开始后台拉取，搜索时秒出）
-        ensureTermuxIndex()
+        // 不预加载 Termux 索引：默认列表无需网络；首次搜索时再后台拉取
         // 订阅 Shizuku 授权结果事件，自动刷新权限状态
         viewModelScope.launch {
             appEventBus.events.collect { event ->
