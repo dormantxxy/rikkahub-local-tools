@@ -124,7 +124,7 @@ jobs:
       - name: Build GitHub debug APK
         env:
           RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
-        run: ./gradlew assembleGithubDebug --no-daemon --max-workers=2 --stacktrace -x lintVitalAnalyzeGithubDebug -x lintVitalGithubDebug
+        run: ./gradlew assembleGithubDebug --no-daemon --max-workers=2 --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
