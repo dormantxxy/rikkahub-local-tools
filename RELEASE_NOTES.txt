@@ -26,3 +26,11 @@ RikkaHub 3.1.1 增强版
 
 修复：
 - 修复 run_shell_command 执行时无法停止的问题：Shizuku 执行改为可取消，点击停止立即生效
+
+最新版本更新：
+- 内置 17 个扩展全部镜像到自建仓库 rikkahub-extensions（防源站失效，下载更稳）
+- 修复工具链环境：GIT_EXEC_PATH、SSL_CERT_FILE、版本目录冒号、Termux sh 兼容链接、同名工具新装优先
+- 商店：分类列表显示全部索引包、下拉刷新重新下载索引、安装即时进度、安装中可取消、库/插件标记
+- 移除 Firebase Analytics/Crashlytics（不再出现 Enable Google Play services 通知）
+- 修复 run_shell_command 执行时无法停止的问题（Shizuku 执行可取消，停止立即生效）
+- GitHub 代理按实测排序（gh-proxy.com 优先），Termux 镜像按实测排序（中科大优先）
