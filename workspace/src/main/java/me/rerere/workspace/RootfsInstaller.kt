@@ -438,5 +438,12 @@ class RootfsInstaller(
         private const val PROGRESS_STEP_BYTES = 512 * 1024
         private const val CONNECT_TIMEOUT_MS = 30_000
         private const val READ_TIMEOUT_MS = 60_000
+
+        /** 国内 GitHub 镜像代理，优先尝试。 */
+        private val MIRROR_PREFIXES = listOf(
+            "https://ghfast.top/",
+            "https://gh-proxy.com/",
+            "https://ghproxy.net/",
+        )
     }
 }
