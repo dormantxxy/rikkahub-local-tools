@@ -106,7 +106,7 @@ object ToolchainEnvironment {
                 envVars["GIT_EXEC_PATH"] = File(rec.payloadDir, "libexec/git-core").absolutePath
             }
             rec.envVars.forEach { (k, v) ->
-                if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH" && k != "GIT_EXEC_PATH") {
+                if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH") {
                     // SSL_CERT_FILE 优先取 ca-certificates 的证书，避免被其他扩展覆盖
                     if (k == "SSL_CERT_FILE" && !envVars["SSL_CERT_FILE"].isNullOrBlank()) {
                         return@forEach
@@ -115,20 +115,6 @@ object ToolchainEnvironment {
                 }
             }
         }
-        // 跨扩展聚合 Python site-packages（pip 等库包分散在不同扩展里）
-        val pythonPaths = records.flatMap { rec ->
-            File(rec.payloadDir, "lib").listFiles()
-                ?.filter { it.isDirectory && it.name.startsWith("python3") }
-                ?.flatMap { py -> listOf(File(py, "site-packages"), File(py, "dist-packages")) }
-                ?.filter { it.isDirectory }
-                ?: emptyList()
-        }.distinct()
-        if (pythonPaths.isNotEmpty()) {
-            envVars["PYTHONPATH"] = pythonPaths.joinToString(":") { it.absolutePath }
-        }
-        // pip 缓存放到可写的临时目录（避免 HOME 缓存权限警告）
-        envVars["PIP_CACHE_DIR"] = File(tmp, "pip-cache").apply { mkdirs() }.absolutePath
-
         // 优先使用 ca-certificates 的证书（即使其他扩展自带 cert，也用它保证 HTTPS 兼容）
         val caCert = File(context.filesDir, "extensions/termux.ca.certificates")
             .listFiles()?.asSequence()

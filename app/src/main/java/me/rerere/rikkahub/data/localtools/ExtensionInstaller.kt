@@ -249,9 +249,6 @@ class ExtensionInstaller(
                 error("扩展包内未找到可安装内容")
             }
 
-            // 2.5) 修复 Termux 包脚本的硬编码 shebang（/data/data/com.termux/files/usr/bin/...）
-            fixTermuxShebangs(payloadDir)
-
             // 3) 赋可执行权限（root 优先，其次 Shizuku；都无则用普通权限，app 对自己的文件有权限）
             onUpdate(InstallUpdate(InstallPhase.INSTALLING))
             runCatching {
@@ -657,45 +654,6 @@ class ExtensionInstaller(
      * 照搬 MobiCode Studio 的 ExtensionEnvironmentGroup.variables 构建逻辑，
      * 在安装时计算并保存每个扩展的环境变量（运行时不再扫描文件）。
      */
-    /**
-     * Termux 包内脚本（npm、pip 等）硬编码了 #!/data/data/com.termux/files/usr/bin/xxx。
-     * 在 RikkaHub 中该前缀不存在，必须改写为 #!/system/bin/env xxx（或 /system/bin/sh）。
-     * 只处理以 #! 开头且第一行命中 Termux 前缀的文本脚本，不碰二进制。
-     */
-    private fun fixTermuxShebangs(payloadDir: File) {
-        val prefix = "#!/data/data/com.termux/files/usr/bin/"
-        fun fix(file: File) {
-            if (!file.isFile || file.length() == 0L || file.length() > 2_000_000L) return
-            runCatching {
-                val head = ByteArray(256)
-                val read = java.io.FileInputStream(file).use { it.read(head) }
-                if (read <= 0) return
-                val headText = String(head, 0, read, Charsets.UTF_8)
-                if (!headText.startsWith(prefix)) return
-                val text = file.readText()
-                val firstLine = text.substringBefore(n)
-                if (!firstLine.startsWith(prefix)) return
-                val interp = firstLine.removePrefix(prefix).trim()
-                val newFirst = when {
-                    interp == "sh" -> "#!/system/bin/sh"
-                    interp.startsWith("env ") -> "#!/system/bin/env " + interp.removePrefix("env ")
-                    else -> "#!/system/bin/env " + interp
-                }
-                file.writeText(newFirst + text.substring(firstLine.length))
-                file.setExecutable(true, false)
-            }
-        }
-        val dirs = listOf(
-            "bin",
-            "lib/node_modules/npm/bin",
-            "lib/node_modules/corepack/shims",
-            "lib/node_modules/pnpm/bin",
-        )
-        dirs.forEach { rel ->
-            File(payloadDir, rel).takeIf { it.isDirectory }?.listFiles()?.forEach { f -> if (f.isFile) fix(f) }
-        }
-    }
-
     private fun buildExtensionEnvVars(payload: File): Map<String, String> {
         val vars = LinkedHashMap<String, String>()
 
@@ -718,23 +676,8 @@ class ExtensionInstaller(
         if (includeDirs.isNotEmpty()) vars["CPATH"] = includeDirs.joinToString(":") { it.absolutePath }
 
         // Termux git 等包需要 GIT_EXEC_PATH 才能找到 git-remote-* helper
-        // 只记录带真实 git-remote-http 二进制的（MobiCode git 2.55 的只是 180B 脚本，会破坏 HTTP）
         val gitExec = File(payload, "libexec/git-core")
-        val gitRemoteHttp = File(gitExec, "git-remote-http")
-        if (gitExec.isDirectory && gitRemoteHttp.isFile && gitRemoteHttp.length() > 100_000L) {
-            vars["GIT_EXEC_PATH"] = gitExec.absolutePath
-        }
-        // git 模板目录（消除 Termux git 的 templates not found 警告）
-        val gitTemplates = File(payload, "share/git-core/templates")
-        if (gitTemplates.isDirectory) vars["GIT_TEMPLATE_DIR"] = gitTemplates.absolutePath
-
-        // Python site-packages（pip 等 python 库包需要进 PYTHONPATH 才能被 import）
-        val pythonPaths = File(payload, "lib").listFiles()
-            ?.filter { it.isDirectory && it.name.startsWith("python3") }
-            ?.flatMap { py -> listOf(File(py, "site-packages"), File(py, "dist-packages")) }
-            ?.filter { it.isDirectory }
-            ?: emptyList()
-        if (pythonPaths.isNotEmpty()) vars["PYTHONPATH"] = pythonPaths.joinToString(":") { it.absolutePath }
+        if (gitExec.isDirectory) vars["GIT_EXEC_PATH"] = gitExec.absolutePath
 
         // MOBICODE_SYSROOT = sysrootOf(payload)
         val sysroot = listOf("sysroot", "ndk/sysroot")
