@@ -24,6 +24,7 @@ import me.rerere.rikkahub.data.localtools.InstalledRecord
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ShizukuHelper
 import me.rerere.rikkahub.data.localtools.ShellExecutor
+import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 
 data class ToolchainItem(
