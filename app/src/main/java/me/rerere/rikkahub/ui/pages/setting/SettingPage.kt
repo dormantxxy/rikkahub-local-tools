@@ -2,6 +2,10 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -55,6 +59,7 @@ import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Image02
+import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.ImageUpload
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
@@ -296,6 +301,36 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             }
                         },
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
+                    )
+                    // 所有文件访问（MANAGE_EXTERNAL_STORAGE 是特殊权限，需跳系统设置授权）
+                    item(
+                        onClick = {
+                            val ctx = LocalContext.current
+                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                    data = Uri.parse("package:" + ctx.packageName)
+                                }
+                            } else {
+                                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                            }
+                            runCatching { ctx.startActivity(intent) }
+                                .onFailure {
+                                    ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                        data = Uri.parse("package:" + ctx.packageName)
+                                    })
+                                }
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.FolderOpen, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = {
+                            Text(
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
+                                    "已授权：临时文件将保存到 /storage/emulated/0/RikkaHub/tmp"
+                                } else {
+                                    "未授权：临时文件保存到 App 私有目录（点击授权后可保存到公共目录）"
+                                }
+                            )
+                        },
+                        headlineContent = { Text("所有文件访问") },
                     )
                 }
             }
