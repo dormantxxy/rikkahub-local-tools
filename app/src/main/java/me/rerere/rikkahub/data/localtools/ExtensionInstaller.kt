@@ -91,8 +91,11 @@ class ExtensionInstaller(
 
         /** Termux 官方仓库的国内镜像（下载走这里，索引内置在 APK 中）。 */
         private val TERMUX_MIRRORS = listOf(
+            "https://mirrors.ustc.edu.cn/termux/apt/termux-main/",      // 实测最快
+            "https://mirror.nju.edu.cn/termux/apt/termux-main/",
+            "https://mirror.sjtu.edu.cn/termux/apt/termux-main/",
             "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main/",
-            "https://mirrors.ustc.edu.cn/termux/apt/termux-main/",
+            "https://mirrors.bfsu.edu.cn/termux/apt/termux-main/",
         )
     }
 

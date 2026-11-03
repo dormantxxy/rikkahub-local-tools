@@ -141,8 +141,10 @@ object MobiCodeCatalog {
 
     /** Termux 索引镜像源（按速度排序，全部为当前可访问的国内镜像；官方兜底）。 */
     private val TERMUX_INDEX_SOURCES = listOf(
+        "https://mirrors.ustc.edu.cn/termux/",      // 实测最快（~4.1MB/s）
+        "https://mirror.nju.edu.cn/termux/",
+        "https://mirror.sjtu.edu.cn/termux/",
         "https://mirrors.tuna.tsinghua.edu.cn/termux/",
-        "https://mirrors.ustc.edu.cn/termux/",
         "https://mirrors.bfsu.edu.cn/termux/",
         "https://packages.termux.dev/",
     )
