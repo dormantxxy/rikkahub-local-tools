@@ -11,6 +11,7 @@ import me.rerere.rikkahub.data.ai.mcp.McpManager
 import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.datastore.Settings
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.db.entity.toolApprovalOverrides
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
@@ -59,7 +60,10 @@ class ChatToolFactory(
             if (shouldUseExternalWebSearch(assistant, model)) {
                 addAll(createSearchTools(settings))
             }
-            addAll(localTools.getTools(assistant.localTools))
+            val deviceShellApproval = assistant.workspaceId?.toString()?.let { id ->
+                workspaceRepository.getById(id)?.toolApprovalOverrides()?.get("run_shell_command")
+            } ?: true
+            addAll(localTools.getTools(assistant.localTools, deviceShellApproval = deviceShellApproval))
             if (assistant.enableRecentChatsReference) {
                 addAll(createConversationTools(conversationRepository, assistant.id))
             }

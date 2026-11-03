@@ -4,6 +4,7 @@ import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.tts.provider.TTSManager
@@ -15,6 +16,7 @@ class LocalTools(
     private val settingsStore: SettingsStore,
     private val shellExecutor: ShellExecutor,
     private val toolchainExecutor: ToolchainExecutor,
+    private val extensionInstaller: ExtensionInstaller,
 ) {
     private val defaultDir = context.filesDir.absolutePath
     private val rikkahubWorkDir = java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
@@ -37,7 +39,22 @@ class LocalTools(
     val webFetchTool by lazy { buildWebFetchTool() }
     val runCliTool by lazy { buildRunCliTool(toolchainExecutor, rikkahubWorkDir) }
 
-    fun getTools(options: List<LocalToolOption>): List<Tool> {
+    // ===== 增强工具 =====
+    val envInfoTool by lazy { buildEnvInfoTool(context, toolchainExecutor, extensionInstaller) }
+    val pkgSearchTool by lazy { buildPkgSearchTool(context) }
+    val pkgInstallTool by lazy { buildPkgInstallTool(context, extensionInstaller) }
+    val tapTool by lazy { buildTapTool(shellExecutor) }
+    val swipeTool by lazy { buildSwipeTool(shellExecutor) }
+    val inputTextTool by lazy { buildInputTextTool(shellExecutor) }
+    val uiDumpTool by lazy { buildUiDumpTool(shellExecutor) }
+    val screenshotTool by lazy { buildScreenshotTool(context, shellExecutor) }
+    val logcatTool by lazy { buildLogcatTool(shellExecutor) }
+
+    fun getTools(
+        options: List<LocalToolOption>,
+        /** 设备 Shell 是否需要审批（来自工作区工具审批设置，默认需要）。 */
+        deviceShellApproval: Boolean = true,
+    ): List<Tool> {
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
@@ -50,13 +67,30 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        if (options.contains(LocalToolOption.Shell)) tools.add(runShellTool)
+        if (options.contains(LocalToolOption.Shell)) {
+            // 设备 Shell 审批跟随工作区「工具审批」中的“设备 Shell”开关
+            tools.add(runShellTool.copy(needsApproval = { input -> deviceShellApproval || runShellTool.needsApproval(input) }))
+        }
         if (options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
         if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
         if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
         // run_cli 依赖 root/Shizuku：读 App 启动时缓存的权限状态（轻量，不启动 su）
         if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) tools.add(runCliTool)
+        if (options.contains(LocalToolOption.Toolchain)) {
+            tools.add(envInfoTool)
+            tools.add(pkgSearchTool)
+            tools.add(pkgInstallTool)
+        }
+        // UI 自动化 / 截屏 / logcat 依赖 root 或 Shizuku：无权限时不暴露给 AI
+        if (options.contains(LocalToolOption.UiAutomation) && toolchainExecutor.hasPrivilege()) {
+            tools.add(tapTool)
+            tools.add(swipeTool)
+            tools.add(inputTextTool)
+            tools.add(uiDumpTool)
+        }
+        if (options.contains(LocalToolOption.Screenshot) && toolchainExecutor.hasPrivilege()) tools.add(screenshotTool)
+        if (options.contains(LocalToolOption.Logcat) && toolchainExecutor.hasPrivilege()) tools.add(logcatTool)
         return tools
     }
 }

@@ -29,6 +29,8 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
+    // 设备 Shell（助手本地工具 run_shell_command）也在此处管理审批
+    "run_shell_command" to true,
 )
 
 /** 直接写文件的工具, 只在支持 [WorkspaceCapabilities.fileWriteTools] 的工作区提供 */

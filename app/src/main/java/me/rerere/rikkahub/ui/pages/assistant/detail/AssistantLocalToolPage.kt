@@ -110,13 +110,22 @@ private fun AssistantLocalToolContent(
     val hasPrivilege by produceState(initialValue = true, shizukuGranted) {
         value = withContext(Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
     }
-    // 进入页面时根据权限同步 CLI 开关：有权限自动开启，无权限自动移除（AI 不会发现该工具）
+    // 进入页面时根据权限同步需要 root/Shizuku 的工具：有权限自动开启 Cli，无权限全部移除（AI 不会发现）
+    val privilegedTools = setOf(
+        LocalToolOption.Cli,
+        LocalToolOption.UiAutomation,
+        LocalToolOption.Screenshot,
+        LocalToolOption.Logcat,
+    )
     androidx.compose.runtime.LaunchedEffect(hasPrivilege) {
-        val contains = assistant.localTools.contains(LocalToolOption.Cli)
-        if (hasPrivilege && !contains) {
-            onUpdate(assistant.copy(localTools = assistant.localTools + LocalToolOption.Cli))
-        } else if (!hasPrivilege && contains) {
-            onUpdate(assistant.copy(localTools = assistant.localTools - LocalToolOption.Cli))
+        var updated = assistant.localTools
+        if (!hasPrivilege) {
+            updated = updated.filterNot { it in privilegedTools }
+        } else if (!updated.contains(LocalToolOption.Cli)) {
+            updated = updated + LocalToolOption.Cli
+        }
+        if (updated != assistant.localTools) {
+            onUpdate(assistant.copy(localTools = updated))
         }
     }
     val permissionRequiredText =
@@ -286,6 +295,10 @@ private fun AssistantLocalToolContent(
             toolItemRaw(option = LocalToolOption.SearchCode, icon = HugeIcons.Code, title = "代码检索", description = "在目录里按关键字搜索文件内容")
             toolItemRaw(option = LocalToolOption.FileTree, icon = HugeIcons.FolderOpen, title = "文件树", description = "列出目录结构")
             toolItemRaw(option = LocalToolOption.WebFetch, icon = HugeIcons.Earth, title = "网页浏览", description = "后台抓取网页正文（不渲染）")
+            toolItemRaw(option = LocalToolOption.Toolchain, icon = HugeIcons.ComputerTerminal01, title = "工具链增强", description = "查看工具链环境 / 搜索并安装扩展包（env_info / pkg_search / pkg_install）")
+            toolItemRaw(option = LocalToolOption.UiAutomation, icon = HugeIcons.SmartPhone01, title = "UI 自动化", description = if (hasPrivilege) "点击 / 滑动 / 输入文本 / 控件树（tap / swipe / input_text / ui_dump）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
+            toolItemRaw(option = LocalToolOption.Screenshot, icon = HugeIcons.SmartPhone01, title = "截屏", description = if (hasPrivilege) "截取屏幕并保存到应用私有目录" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
+            toolItemRaw(option = LocalToolOption.Logcat, icon = HugeIcons.Code, title = "日志读取", description = if (hasPrivilege) "读取系统/应用日志（logcat）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
         }
     }
 }

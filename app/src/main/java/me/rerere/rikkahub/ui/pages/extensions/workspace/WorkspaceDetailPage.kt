@@ -617,6 +617,7 @@ private fun workspaceToolApprovalItems() = listOf(
     Triple("workspace_write_file", stringResource(R.string.workspace_detail_tool_write_file), HugeIcons.PencilEdit01),
     Triple("workspace_edit_file", stringResource(R.string.workspace_detail_tool_edit_file), HugeIcons.FileEdit),
     Triple("workspace_shell", stringResource(R.string.workspace_detail_tool_shell), HugeIcons.ComputerTerminal01),
+    Triple("run_shell_command", "设备 Shell（助手本地工具）", HugeIcons.ComputerTerminal01),
 )
 
 @Composable

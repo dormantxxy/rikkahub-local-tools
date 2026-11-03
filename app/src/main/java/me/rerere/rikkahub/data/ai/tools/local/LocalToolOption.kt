@@ -61,4 +61,24 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("cli")
     data object Cli : LocalToolOption()
+
+    /** 工具链增强：env_info / pkg_search / pkg_install。 */
+    @Serializable
+    @SerialName("toolchain")
+    data object Toolchain : LocalToolOption()
+
+    /** UI 自动化：tap / swipe / input_text / ui_dump（需 root 或 Shizuku）。 */
+    @Serializable
+    @SerialName("ui_automation")
+    data object UiAutomation : LocalToolOption()
+
+    /** 截屏（需 root 或 Shizuku）。 */
+    @Serializable
+    @SerialName("screenshot")
+    data object Screenshot : LocalToolOption()
+
+    /** 日志读取（logcat，需 root 或 Shizuku）。 */
+    @Serializable
+    @SerialName("logcat")
+    data object Logcat : LocalToolOption()
 }
