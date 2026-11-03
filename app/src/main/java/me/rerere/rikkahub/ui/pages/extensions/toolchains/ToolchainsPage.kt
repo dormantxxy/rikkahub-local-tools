@@ -380,7 +380,7 @@ private fun StoreCard(
                             fontWeight = FontWeight.SemiBold,
                         )
                         item.isInstalled && item.installed?.hasCommands == false -> Text(
-                            "库",
+                            "库/插件",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

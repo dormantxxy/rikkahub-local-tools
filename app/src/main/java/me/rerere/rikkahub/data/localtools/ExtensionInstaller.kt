@@ -84,9 +84,9 @@ class ExtensionInstaller(
         private const val USER_AGENT = "RikkaHub-MobiCode-Toolchain/1.0"
 
         private val GITHUB_MIRRORS = listOf(
-            "https://ghfast.top/",
-            "https://gh-proxy.com/",
+            "https://gh-proxy.com/",       // 实测最快（~1.8MB/s）
             "https://ghproxy.net/",
+            "https://ghfast.top/",
         )
 
         /** Termux 官方仓库的国内镜像（下载走这里，索引内置在 APK 中）。 */
