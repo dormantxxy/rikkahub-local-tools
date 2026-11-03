@@ -194,7 +194,7 @@ class ExtensionInstaller(
         return result.values.toList()
     }
 
-    private fun installSingle(
+    private suspend fun installSingle(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit,
     ): Result<InstalledRecord> = runCatching {

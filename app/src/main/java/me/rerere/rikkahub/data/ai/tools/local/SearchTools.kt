@@ -141,6 +141,20 @@ private fun shouldEnter(dir: File): Boolean {
     return name != ".git" && name != "node_modules" && name != "build" && name != ".gradle" && name != ".kotlin"
 }
 
+/** 只搜索常见文本文件，跳过二进制（大幅减少无效 IO）。 */
+private val TEXT_EXTENSIONS = setOf(
+    "kt", "kts", "java", "xml", "json", "md", "txt", "js", "mjs", "cjs", "ts", "tsx", "jsx",
+    "html", "htm", "css", "scss", "py", "go", "rs", "c", "h", "cpp", "hpp", "cc", "sh", "bash",
+    "yml", "yaml", "toml", "ini", "conf", "properties", "gradle", "sql", "log", "csv", "proto",
+    "gitignore", "env", "lua", "php", "rb", "pl", "swift", "dart", "vue", "svelte"
+)
+
+private fun isLikelyTextFile(file: File): Boolean {
+    val ext = file.extension.lowercase()
+    if (ext.isBlank()) return true
+    return ext in TEXT_EXTENSIONS
+}
+
 /** 简单 glob -> Regex（* 与 ?）。 */
 private fun globToRegex(glob: String): Regex {
     val sb = StringBuilder()

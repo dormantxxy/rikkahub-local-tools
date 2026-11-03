@@ -17,7 +17,7 @@ object ShizukuShellManager {
     private const val TAG = "ShizukuShellManager"
     private const val BIND_TIMEOUT_MILLIS = 8_000L
 
-    private val lock = Any()
+    private val lock = java.lang.Object()
 
     @Volatile
     private var service: IShizukuShellService? = null

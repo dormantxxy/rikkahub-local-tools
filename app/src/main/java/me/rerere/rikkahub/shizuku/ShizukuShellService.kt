@@ -2,7 +2,7 @@ package me.rerere.rikkahub.shizuku
 
 import android.content.Context
 import android.os.Bundle
-import android.os.Process
+import android.os.Process as AndroidProcess
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
@@ -28,7 +28,7 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         private const val DRAIN_JOIN_MILLIS = 2_000L
     }
 
-    override fun getUid(): Int = Process.myUid()
+    override fun getUid(): Int = AndroidProcess.myUid()
 
     override fun destroy() {
         System.exit(0)
@@ -41,7 +41,7 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         timeoutSeconds: Int,
     ): Bundle {
         val result = Bundle()
-        var process: Process? = null
+        var process: java.lang.Process? = null
         try {
             val builder = ProcessBuilder(argv)
             if (!workingDirectory.isNullOrBlank()) {
