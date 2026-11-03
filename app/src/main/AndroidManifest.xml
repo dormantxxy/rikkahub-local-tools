@@ -143,6 +143,14 @@
         android:value="local web server for LLM chat UI" />
     </service>
 
+    <!-- Shizuku：必须手动注册 provider（provider AAR 不自带），否则 Shizuku 无法连接 -->
+    <provider
+      android:name="rikka.shizuku.ShizukuProvider"
+      android:authorities="${applicationId}.shizuku"
+      android:multiprocess="false"
+      android:enabled="true"
+      android:exported="true"
+      android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
     <provider
       android:name="androidx.core.content.FileProvider"
       android:authorities="${applicationId}.fileprovider"

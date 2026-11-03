@@ -157,13 +157,12 @@ private fun PrivilegeBanner(privilege: String, onRequestShizuku: () -> Unit, onR
         )
         "shizuku_unauthorized" -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "Shizuku 正在运行，但本应用尚未授权（请在 Shizuku 里允许本应用）",
+                "Shizuku 正在运行。请打开 Shizuku 管理器，在「已授权应用」中给本应用开启权限，然后点刷新。",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onRequestShizuku) { Text("授予 Shizuku 权限") }
-                OutlinedButton(onClick = onRefresh) { Text("刷新") }
+                FilledTonalButton(onClick = onRefresh) { Text("刷新") }
             }
         }
         else -> Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
