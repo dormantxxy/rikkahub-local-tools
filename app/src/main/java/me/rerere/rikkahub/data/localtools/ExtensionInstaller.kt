@@ -8,7 +8,9 @@ import java.net.URL
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import java.util.zip.ZipFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -171,7 +173,7 @@ class ExtensionInstaller(
             }
 
             // 2) 安装自身
-            installSingle(entry, onUpdate).getOrThrow()
+            Result.success(installSingle(entry, onUpdate).getOrThrow())
         } catch (e: CancellationException) {
             File(extRoot, "_tmp_${entry.id}").deleteRecursively()
             throw e
@@ -267,14 +269,14 @@ class ExtensionInstaller(
             saveManifest(map)
             _installed.value = map
             Result.success(record)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Result.failure(e)
         } finally {
             archive.delete()
             workDir.deleteRecursively()
         }
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Throwable) {
-        Result.failure(e)
     }
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {

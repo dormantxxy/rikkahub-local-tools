@@ -5,7 +5,11 @@ import android.content.Context
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
+import kotlin.coroutines.resume
 
 /**
  * Shizuku UserService 管理器（照搬 MobiCode Studio 的 ShizukuShellManager 思路）。
@@ -98,31 +102,47 @@ object ShizukuShellManager {
 
     /**
      * 在 Shizuku（root）进程执行 shell 命令。
+     * 使用 suspendCancellableCoroutine：对话停止/协程取消时立即返回（协程取消不再等命令跑完）。
      */
-    fun exec(
+    suspend fun exec(
         command: String,
         cwd: String? = null,
         timeoutSeconds: Int = 60,
         environment: Map<String, String> = emptyMap(),
-    ): Result {
-        val svc = ensureService()
-            ?: return Result(-1, "", "Shizuku shell service 不可用（未授权或绑定失败）", timedOut = false)
-        return try {
-            val bundle = svc.exec(
-                listOf("/system/bin/sh", "-c", command),
-                environment.map { "${it.key}=${it.value}" },
-                cwd,
-                timeoutSeconds,
-            )
-            Result(
-                exitCode = bundle.getInt(ShizukuShellService.KEY_EXIT_CODE, -1),
-                stdout = bundle.getString(ShizukuShellService.KEY_OUTPUT) ?: "",
-                stderr = "",
-                timedOut = bundle.getBoolean(ShizukuShellService.KEY_TIMED_OUT, false),
-            )
-        } catch (t: Throwable) {
-            Log.e(TAG, "exec failed", t)
-            Result(-1, "", t.message ?: t.toString(), timedOut = false)
+    ): Result = withContext(Dispatchers.IO) {
+        suspendCancellableCoroutine { cont ->
+            val worker = Thread {
+                try {
+                    val svc = ensureService()
+                    if (svc == null) {
+                        if (cont.isActive) cont.resume(
+                            Result(-1, "", "Shizuku shell service 不可用（未授权或绑定失败）", timedOut = false)
+                        )
+                        return@Thread
+                    }
+                    val bundle = svc.exec(
+                        listOf("/system/bin/sh", "-c", command),
+                        environment.map { "${it.key}=${it.value}" },
+                        cwd,
+                        timeoutSeconds,
+                    )
+                    if (cont.isActive) cont.resume(
+                        Result(
+                            exitCode = bundle.getInt(ShizukuShellService.KEY_EXIT_CODE, -1),
+                            stdout = bundle.getString(ShizukuShellService.KEY_OUTPUT) ?: "",
+                            stderr = "",
+                            timedOut = bundle.getBoolean(ShizukuShellService.KEY_TIMED_OUT, false),
+                        )
+                    )
+                } catch (t: Throwable) {
+                    Log.e(TAG, "exec failed", t)
+                    if (cont.isActive) cont.resume(Result(-1, "", t.message ?: t.toString(), timedOut = false))
+                }
+            }
+            worker.isDaemon = true
+            worker.name = "shizuku-shell-exec"
+            worker.start()
+            cont.invokeOnCancellation { worker.interrupt() }
         }
     }
 
