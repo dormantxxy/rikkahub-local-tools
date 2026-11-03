@@ -476,33 +476,6 @@
         ]
       },
       {
-        "extension_id": "mobicode.tool.apk-reverse",
-        "name": "APK 逆向分析",
-        "version": "1.0.0",
-        "publisher": "MobiCode",
-        "description": "解锁 APK 逆向改包能力：清单解析、DEX 搜索与 smali 补丁、去广告、去会员、Flutter 专项扫描、tosks 脱壳与重打包签名，并让 AI 获得对应的 apk_* 工具。",
-        "category": "TOOLCHAIN",
-        "download_size": 2308,
-        "download_url": "https://github.com/Putongren0/MobiCode-Extensions/releases/download/v2026.10.28/MobiCode-apk-reverse-v1.0.0.mcext",
-        "archive_sha256": "ccd38bb7c295308cc57262ab516212bccdab5f0ddaafcf5c69ced3c96e8d2297",
-        "minimum_app_version": 19,
-        "repository_url": "https://github.com/Putongren0/MobiCode-Extensions",
-        "license_name": "MIT",
-        "updated_at": "2026-10-28 12:19:43",
-        "languages": [],
-        "project_templates": [],
-        "format": "mcext",
-        "depends": [],
-        "versions": [
-          {
-            "version": "1.0.0",
-            "download_url": "https://github.com/Putongren0/MobiCode-Extensions/releases/download/v2026.10.28/MobiCode-apk-reverse-v1.0.0.mcext",
-            "archive_sha256": "ccd38bb7c295308cc57262ab516212bccdab5f0ddaafcf5c69ced3c96e8d2297",
-            "download_size": 2308
-          }
-        ]
-      },
-      {
         "extension_id": "mobicode.tool.so-reverse",
         "name": "SO 逆向分析",
         "version": "1.0.0",
@@ -526,37 +499,6 @@
             "download_url": "https://github.com/Putongren0/MobiCode-Extensions/releases/download/v2026.10.28/MobiCode-so-reverse-v1.0.0.mcext",
             "archive_sha256": "4c0688dd03a6527edd6e44967b8bc7654c0a5292cb9ed4210793a6ab8d745585",
             "download_size": 33608
-          }
-        ]
-      },
-      {
-        "extension_id": "mobicode.runtime.autojs",
-        "name": "Auto.js 运行时",
-        "version": "6.7.0.1",
-        "publisher": "MobiCode",
-        "description": "提供 AutoJs6 6.7.0 打包模板（inrt 变体）与 arm64-v8a 原生库，无需安装 AutoJs6 即可把 main.js 打包成可独立运行的 APK。",
-        "category": "LANGUAGE",
-        "download_size": 77550675,
-        "download_url": "https://github.com/Putongren0/MobiCode-Extensions/releases/download/v2026.09.26/MobiCode-AutoJs-Runtime-v6.7.0.1.mcext",
-        "archive_sha256": "a59bb1bada7ee993343e7ac75135cea2636b88f0965a9cd0edfbfa18399d1cf4",
-        "minimum_app_version": 19,
-        "repository_url": "https://github.com/Putongren0/MobiCode-Extensions",
-        "license_name": "AutoJs6 MPL-2.0 / MobiCode Runtime",
-        "updated_at": "2026-09-27 05:14:25",
-        "languages": [
-          "AUTOJS_APP"
-        ],
-        "project_templates": [
-          "Auto.js 应用"
-        ],
-        "format": "mcext",
-        "depends": [],
-        "versions": [
-          {
-            "version": "6.7.0.1",
-            "download_url": "https://github.com/Putongren0/MobiCode-Extensions/releases/download/v2026.09.26/MobiCode-AutoJs-Runtime-v6.7.0.1.mcext",
-            "archive_sha256": "a59bb1bada7ee993343e7ac75135cea2636b88f0965a9cd0edfbfa18399d1cf4",
-            "download_size": 77550675
           }
         ]
       }
