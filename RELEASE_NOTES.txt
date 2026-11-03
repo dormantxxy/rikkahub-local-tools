@@ -11,3 +11,7 @@ RikkaHub 3.1.1 增强版
 8. search_code / list_file_tree / manage_files 搜索改为纯 Kotlin 实现，修复 Android grep 无输出问题。
 9. 左侧滑页移除图像生成入口，替换为扩展商店入口。
 10. 设备 Shell 审批开关（本地工具列表最下面，默认关闭）。
+
+修复：
+- 设备 Shell 审批关闭时不再拦截任何命令（包括风险命令）；只有开启审批时才拦截风险命令
+- 修复 rm -rf /data/... 等安全路径被误判为危险命令的问题
