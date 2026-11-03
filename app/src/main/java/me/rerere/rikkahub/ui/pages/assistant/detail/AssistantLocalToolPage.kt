@@ -299,6 +299,14 @@ private fun AssistantLocalToolContent(
             toolItemRaw(option = LocalToolOption.UiAutomation, icon = HugeIcons.SmartPhone01, title = "UI 自动化", description = if (hasPrivilege) "点击 / 滑动 / 输入文本 / 控件树（tap / swipe / input_text / ui_dump）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
             toolItemRaw(option = LocalToolOption.Screenshot, icon = HugeIcons.SmartPhone01, title = "截屏", description = if (hasPrivilege) "截取屏幕并保存到应用私有目录" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
             toolItemRaw(option = LocalToolOption.Logcat, icon = HugeIcons.Code, title = "日志读取", description = if (hasPrivilege) "读取系统/应用日志（logcat）" else "需要 root 或 Shizuku 权限", enabled = hasPrivilege)
+            // 设备 Shell 审批：与工具列表同风格，默认关闭
+            switchItem(
+                checked = assistant.deviceShellApproval,
+                onCheckedChange = { onUpdate(assistant.copy(deviceShellApproval = it)) },
+                leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
+                supportingContent = { Text("设备 Shell（run_shell_command）执行前是否需要用户确认（默认关闭）") },
+                headlineContent = { Text("设备 Shell 审批") },
+            )
         }
     }
 }
