@@ -66,7 +66,8 @@ object ToolchainEnvironment {
         val base = workDir(context)
         val home = File(base, ".home").apply { mkdirs() }
         val tmp = File(base, ".tmp").apply { mkdirs() }
-        val records = installer.installed.value.values.sortedBy { it.id }
+        // 新安装的扩展优先（同名命令以最新安装的为准，如 termux.git 覆盖旧 mobicode git）
+        val records = installer.installed.value.values.sortedByDescending { it.installedAt }
 
         // 聚合所有已装扩展的 PATH / LD_LIBRARY_PATH / CPATH（照搬 MobiCode enabledEnvironment*Directories）
         val binDirs = records.flatMap { rec ->
@@ -91,8 +92,11 @@ object ToolchainEnvironment {
         // 扩展自己的非聚合变量（OPENSSL_CONF / SSL_CERT_FILE / OPENSSL_MODULES / NODE_PATH / MOBICODE_SYSROOT）
         for (rec in records) {
             // Termux git 需要 GIT_EXEC_PATH 才能找到 git-remote-https 等 helper
+            // 只取第一个（records 已按安装时间新→旧排序，优先最新 git）
             val gitExec = File(rec.payloadDir, "libexec/git-core")
-            if (gitExec.isDirectory) envVars["GIT_EXEC_PATH"] = gitExec.absolutePath
+            if (gitExec.isDirectory && envVars["GIT_EXEC_PATH"].isNullOrBlank()) {
+                envVars["GIT_EXEC_PATH"] = gitExec.absolutePath
+            }
             rec.envVars.forEach { (k, v) ->
                 if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH") {
                     // SSL_CERT_FILE 优先取 ca-certificates 的证书，避免被其他扩展覆盖
@@ -103,14 +107,12 @@ object ToolchainEnvironment {
                 }
             }
         }
-        // 兜底：即使 ca-certificates 扩展记录丢失，也扫描目录找到证书
-        if (envVars["SSL_CERT_FILE"].isNullOrBlank()) {
-            val cert = File(context.filesDir, "extensions/termux.ca.certificates")
-                .listFiles()?.asSequence()
-                ?.map { File(it, "payload/etc/tls/cert.pem") }
-                ?.firstOrNull { it.isFile }
-            if (cert != null) envVars["SSL_CERT_FILE"] = cert.absolutePath
-        }
+        // 优先使用 ca-certificates 的证书（即使其他扩展自带 cert，也用它保证 HTTPS 兼容）
+        val caCert = File(context.filesDir, "extensions/termux.ca.certificates")
+            .listFiles()?.asSequence()
+            ?.map { File(it, "payload/etc/tls/cert.pem") }
+            ?.firstOrNull { it.isFile }
+        if (caCert != null) envVars["SSL_CERT_FILE"] = caCert.absolutePath
 
         return ToolchainEnv(
             path = envVars["PATH"] ?: HOST_PATH,
