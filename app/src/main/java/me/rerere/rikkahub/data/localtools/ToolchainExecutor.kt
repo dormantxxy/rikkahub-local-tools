@@ -11,7 +11,7 @@ class ToolchainExecutor(
     private val shellExecutor: ShellExecutor,
     private val installer: ExtensionInstaller,
 ) {
-    fun hasPrivilege(): Boolean = shellExecutor.isRootAvailable() || shellExecutor.isShizukuAvailable()
+    fun hasPrivilege(): Boolean = shellExecutor.isRootAvailable() || shellExecutor.isShizukuGranted()
     fun hasToolchains(): Boolean = installer.installed.value.isNotEmpty()
 
     fun currentEnv(): ToolchainEnv = ToolchainEnvironment.build(context, installer)

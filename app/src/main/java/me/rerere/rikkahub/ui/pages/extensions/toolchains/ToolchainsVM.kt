@@ -3,6 +3,7 @@ package me.rerere.rikkahub.ui.pages.extensions.toolchains
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,11 +36,19 @@ data class InstallProgress(
     val total: Long = 0,
     val extracted: Int = 0,
     val entries: Int = 0,
+    val currentEntry: String? = null,
 ) {
-    val percent: Int get() = if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100) else 0
+    val percent: Int get() = when (phase) {
+        InstallPhase.DOWNLOADING -> if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100) else 0
+        InstallPhase.EXTRACTING -> if (entries > 0) ((extracted * 100) / entries).toInt().coerceIn(0, 100) else 0
+        InstallPhase.INSTALLING -> 100
+    }
     val text: String get() = when (phase) {
         InstallPhase.DOWNLOADING -> if (total > 0) "下载中 ${percent}%  ${humanSize(downloaded)}/${humanSize(total)}" else "下载中 ${humanSize(downloaded)}"
-        InstallPhase.EXTRACTING -> if (entries > 0) "解压中 $extracted/$entries" else "解压中…"
+        InstallPhase.EXTRACTING -> if (entries > 0) {
+            val entry = currentEntry?.let { " · " + it.take(40) } ?: ""
+            "解压中 ${percent}%  $extracted/$entries$entry"
+        } else "解压中…"
         InstallPhase.INSTALLING -> "安装中（赋权限/登记）…"
     }
 }
@@ -75,8 +84,16 @@ class ToolchainsVM(
 
     private val emptyItems = extensions.map { ToolchainItem(it, null) }
 
+    /**
+     * 主列表 = 内置目录 + 已安装但不在内置目录的包（远程安装的包追加到列表尾部）。
+     */
     val items: StateFlow<List<ToolchainItem>> = combine(installer.installed, _query) { map, q ->
-        val base = extensions.map { ToolchainItem(it, map[it.id]) }
+        val localIds = extensions.map { it.id }.toSet()
+        val installedOnly = map.values
+            .filter { it.id !in localIds }
+            .sortedBy { it.installedAt }
+            .map { rec -> ToolchainItem(recordToExtension(rec), rec) }
+        val base = extensions.map { ToolchainItem(it, map[it.id]) } + installedOnly
         if (q.isBlank()) base else base.filter { matches(it.ext, q) }
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyItems)
 
@@ -84,14 +101,38 @@ class ToolchainsVM(
     private val _remoteResults = MutableStateFlow<List<ToolchainExtension>>(emptyList())
     val remoteResults: StateFlow<List<ToolchainExtension>> = _remoteResults.asStateFlow()
 
+    private val _remoteLoading = MutableStateFlow(false)
+    val remoteLoading: StateFlow<Boolean> = _remoteLoading.asStateFlow()
+
+    private val _remoteCatalogReady = MutableStateFlow(false)
+    val remoteCatalogReady: StateFlow<Boolean> = _remoteCatalogReady.asStateFlow()
+
+    private var remoteCatalogJob: kotlinx.coroutines.Job? = null
+
     fun searchRemote(query: String) {
         if (query.isBlank()) {
             _remoteResults.value = emptyList()
             return
         }
         viewModelScope.launch {
-            val results = MobiCodeCatalog.searchRemote(context, query)
-            _remoteResults.value = results
+            _remoteLoading.value = true
+            try {
+                // 首次搜索时等待目录预热完成（只等一次）
+                if (!_remoteCatalogReady.value) {
+                    remoteCatalogJob?.join()
+                }
+                val results = MobiCodeCatalog.searchRemote(query, context)
+                val installedIds = installer.installed.value.keys
+                val localById = extensions.associateBy { it.id }
+                // 已安装的 -> 主列表尾部展示；本地目录中同版本 -> 主列表已展示；这里只显示新增/可升级的镜像包
+                _remoteResults.value = results.filter { r ->
+                    if (r.id in installedIds) return@filter false
+                    val local = localById[r.id]
+                    local == null || local.version != r.version
+                }
+            } finally {
+                _remoteLoading.value = false
+            }
         }
     }
 
@@ -99,13 +140,23 @@ class ToolchainsVM(
     val privilege: StateFlow<String> = _privilege.asStateFlow()
 
     init {
-        // 订阅 Shizuku 授权结果事件，自动刷新权限状态
+        // 预热远程扩展目录缓存（打开页面时后台拉取全部扩展源，搜索时秒出）
+        remoteCatalogJob = viewModelScope.launch(Dispatchers.IO) {
+            runCatching { MobiCodeCatalog.fetchRemoteExtensions(context) }
+            _remoteCatalogReady.value = true
+        }
+        // 订阅 Shizuku 授权结果事件（RouteActivity 的权限回调），自动刷新权限状态
         viewModelScope.launch {
             appEventBus.events.collect { event ->
                 if (event is AppEvent.ShizukuPermissionUpdated) {
                     _privilege.value = computePrivilege()
                 }
             }
+        }
+        // 同时观察 ShizukuHelper 的全局权限状态（binder 到达/断开、授权变化都会触发）
+        viewModelScope.launch {
+            combine(ShizukuHelper.permissionGranted, ShizukuHelper.binderAlive) { _, _ -> }
+                .collect { _privilege.value = computePrivilege() }
         }
     }
 
@@ -122,6 +173,21 @@ class ToolchainsVM(
     private fun matches(e: ToolchainExtension, q: String): Boolean =
         e.name.contains(q, true) || e.description.contains(q, true) ||
             e.id.contains(q, true) || e.category.contains(q, true) || e.publisher.contains(q, true)
+
+    private fun recordToExtension(rec: InstalledRecord): ToolchainExtension = ToolchainExtension(
+        id = rec.id,
+        name = rec.name.ifBlank { rec.id },
+        version = rec.version,
+        publisher = rec.publisher.ifBlank { "MobiCode" },
+        description = rec.description,
+        category = rec.category.ifBlank { "MIRROR" },
+        downloadSize = rec.downloadBytes,
+        downloadUrl = rec.downloadUrl,
+        sha256 = "",
+        repositoryUrl = "",
+        licenseName = "",
+        minimumAppVersion = 0,
+    )
 
     private fun computePrivilege(): String = when {
         shellExecutor.isRootAvailable() -> "root"
@@ -146,6 +212,7 @@ class ToolchainsVM(
                     id = ext.id, phase = upd.phase,
                     downloaded = upd.downloaded, total = upd.total,
                     extracted = upd.extracted, entries = upd.entries,
+                    currentEntry = upd.currentEntry,
                 )
             }
             _progress.value = null
@@ -153,6 +220,10 @@ class ToolchainsVM(
                 onSuccess = { "已安装 ${ext.name} ${ext.version}" },
                 onFailure = { "安装失败：${it.message ?: "未知错误"}" },
             )
+            if (result.isSuccess) {
+                // 安装完成后从搜索结果移除（会出现在主列表尾部）
+                _remoteResults.value = _remoteResults.value.filter { it.id != ext.id }
+            }
         }
     }
 

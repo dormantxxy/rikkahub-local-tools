@@ -16,6 +16,8 @@ data class ToolchainEnv(
     val workDir: String,
     val binDirs: List<String>,
     val libDirs: List<String>,
+    // 每个扩展自动追加的环境变量（来自 payload/bin 下 wrapper 脚本的 export 声明）
+    val envVars: Map<String, String> = emptyMap(),
 ) {
     val isEmpty: Boolean get() = binDirs.isEmpty() && libDirs.isEmpty()
 }
@@ -28,27 +30,83 @@ object ToolchainEnvironment {
     fun workDir(context: Context): File =
         File(context.filesDir, "RikkaHub").apply { mkdirs() }
 
+    /**
+     * MobiCode Studio 同款基础运行时环境变量（RUNTIME_VARIABLE_ORDER，共 10 个）：
+     * HOME / TMPDIR / GOTMPDIR / GOCACHE / GOMODCACHE / CARGO_HOME /
+     * MOBICODE_PROJECT_ROOT / MOBICODE_EXEC_DIR / GIT_CONFIG_NOSYSTEM / GIT_CONFIG_GLOBAL。
+     */
+    fun baseEnvVars(context: Context): Map<String, String> {
+        val base = workDir(context)
+        val home = File(base, ".home").apply { mkdirs() }
+        val tmp = File(base, ".tmp").apply { mkdirs() }
+        fun sub(name: String): String = File(tmp, name).apply { mkdirs() }.absolutePath
+        val gitConfig = File(base, ".mobicode/gitconfig").apply {
+            parentFile?.mkdirs()
+            if (!exists()) {
+                runCatching {
+                    writeText("[init]\n    defaultBranch = main\n[core]\n    autocrlf = false\n[safe]\n    directory = *\n")
+                }
+            }
+        }
+        return linkedMapOf(
+            "HOME" to home.absolutePath,
+            "TMPDIR" to tmp.absolutePath,
+            "GOTMPDIR" to sub("go-tmp"),
+            "GOCACHE" to sub("go-cache"),
+            "GOMODCACHE" to sub("go-mod-cache"),
+            "CARGO_HOME" to sub("cargo-home"),
+            "MOBICODE_PROJECT_ROOT" to base.absolutePath,
+            "MOBICODE_EXEC_DIR" to base.absolutePath,
+            "GIT_CONFIG_NOSYSTEM" to "1",
+            "GIT_CONFIG_GLOBAL" to gitConfig.absolutePath,
+        )
+    }
+
     fun build(context: Context, installer: ExtensionInstaller): ToolchainEnv {
         val base = workDir(context)
         val home = File(base, ".home").apply { mkdirs() }
         val tmp = File(base, ".tmp").apply { mkdirs() }
         val records = installer.installed.value.values.sortedBy { it.id }
-        val binDirs = records.mapNotNull { rec ->
-            File(rec.payloadDir, "bin").takeIf { it.isDirectory }?.absolutePath
+
+        // 聚合所有已装扩展的 PATH / LD_LIBRARY_PATH / CPATH（照搬 MobiCode enabledEnvironment*Directories）
+        val binDirs = records.flatMap { rec ->
+            rec.envVars["PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
+        }.distinct()
+        val libDirs = records.flatMap { rec ->
+            rec.envVars["LD_LIBRARY_PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
+        }.distinct()
+        val includeDirs = records.flatMap { rec ->
+            rec.envVars["CPATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
+        }.distinct()
+
+        // 最终环境变量 = 基础 10 个 + 全局聚合 + 各扩展的独立变量
+        val envVars = LinkedHashMap<String, String>()
+        envVars.putAll(baseEnvVars(context))
+        envVars["PATH"] = (binDirs + HOST_PATH).joinToString(":")
+        if (libDirs.isNotEmpty()) {
+            envVars["LD_LIBRARY_PATH"] = libDirs.joinToString(":")
+            envVars["LIBRARY_PATH"] = libDirs.joinToString(":")
         }
-        val libDirs = records.mapNotNull { rec ->
-            File(rec.payloadDir, "lib").takeIf { it.isDirectory }?.absolutePath
+        if (includeDirs.isNotEmpty()) envVars["CPATH"] = includeDirs.joinToString(":")
+        // 扩展自己的非聚合变量（OPENSSL_CONF / SSL_CERT_FILE / OPENSSL_MODULES / NODE_PATH / MOBICODE_SYSROOT）
+        for (rec in records) {
+            rec.envVars.forEach { (k, v) ->
+                if (k != "PATH" && k != "LD_LIBRARY_PATH" && k != "LIBRARY_PATH" && k != "CPATH") {
+                    envVars[k] = v
+                }
+            }
         }
-        val path = (binDirs + HOST_PATH).joinToString(":")
-        val ld = libDirs.joinToString(":")
+
         return ToolchainEnv(
-            path = path,
-            ldLibraryPath = ld,
+            path = envVars["PATH"] ?: HOST_PATH,
+            ldLibraryPath = envVars["LD_LIBRARY_PATH"] ?: "",
             home = home.absolutePath,
             tmp = tmp.absolutePath,
             workDir = base.absolutePath,
             binDirs = binDirs,
             libDirs = libDirs,
+            envVars = envVars,
         )
     }
+
 }

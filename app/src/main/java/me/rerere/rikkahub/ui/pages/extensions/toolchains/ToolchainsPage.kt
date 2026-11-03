@@ -44,6 +44,8 @@ fun ToolchainsPage() {
     val message by vm.message.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val privilege by vm.privilege.collectAsStateWithLifecycle()
+    val remoteResults by vm.remoteResults.collectAsStateWithLifecycle()
+    val remoteLoading by vm.remoteLoading.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
 
     LaunchedEffect(message) {
@@ -85,11 +87,27 @@ fun ToolchainsPage() {
                     onValueChange = vm::setQuery,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    placeholder = { Text("搜索工具链（名称 / 描述 / 分类 / 包名）") },
+                    placeholder = { Text("搜索镜像站全部包（名称 / 描述 / 分类 / 包名）") },
                 )
             }
             item {
                 PrivilegeBanner(privilege = privilege, onRequestShizuku = { vm.requestShizuku() }, onRefresh = { vm.refreshPrivilege() })
+            }
+            if (remoteLoading && query.isNotBlank()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        LinearProgressIndicator(modifier = Modifier.weight(1f))
+                        Text(
+                            "正在搜索镜像站…",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             items(toolchainItems, key = { it.ext.id }) { item ->
                 ToolchainCard(
@@ -212,9 +230,11 @@ private fun ToolchainCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "来源 GitHub",
+                    item.ext.sourceRepo.ifBlank { "来源 GitHub" },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             if (progress != null) {

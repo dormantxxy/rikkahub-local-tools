@@ -100,10 +100,17 @@ class ShellExecutor(
             ?: return ShellResult(-1, "", "需要 root 或 Shizuku 权限才能直跑原生工具链（当前都不可用）")
         val script = buildString {
             if (!cwd.isNullOrBlank()) append("cd ").append(cwd.shellQuote()).append(" && ")
-            append("export PATH=").append(env.path.shellQuote()).append("; ")
-            if (env.ldLibraryPath.isNotBlank()) append("export LD_LIBRARY_PATH=").append(env.ldLibraryPath.shellQuote()).append("; ")
-            append("export HOME=").append(env.home.shellQuote()).append("; ")
-            append("export TMPDIR=").append(env.tmp.shellQuote()).append("; ")
+            if (env.envVars.isNotEmpty()) {
+                // 导出完整环境变量：基础 10 个（MobiCode RUNTIME_VARIABLE_ORDER）+ 每个扩展安装时保存的变量
+                env.envVars.forEach { (k, v) ->
+                    append("export ").append(k).append("=").append(v.shellQuote()).append("; ")
+                }
+            } else {
+                append("export PATH=").append(env.path.shellQuote()).append("; ")
+                if (env.ldLibraryPath.isNotBlank()) append("export LD_LIBRARY_PATH=").append(env.ldLibraryPath.shellQuote()).append("; ")
+                append("export HOME=").append(env.home.shellQuote()).append("; ")
+                append("export TMPDIR=").append(env.tmp.shellQuote()).append("; ")
+            }
             append("export LANG=en_US.UTF-8; ")
             append(command)
         }
