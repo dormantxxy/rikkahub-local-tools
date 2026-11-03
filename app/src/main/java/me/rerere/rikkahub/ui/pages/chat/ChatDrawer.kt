@@ -58,10 +58,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.ChartColumn
+import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderAdd
-import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.ImageToVideo
 import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LanguageCircle
@@ -70,7 +70,6 @@ import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.hugeicons.stroke.Settings03
 import me.rerere.hugeicons.stroke.Sorting01
-import me.rerere.hugeicons.stroke.Sparkles
 import me.rerere.hugeicons.stroke.Tick01
 import me.rerere.hugeicons.stroke.TransactionHistory
 import me.rerere.rikkahub.BuildConfig
@@ -166,7 +165,6 @@ fun ChatDrawerContent(
     var folderToDelete by remember { mutableStateOf<Folder?>(null) }
 
     // Menu popup 状态
-    var showMenuPopup by remember { mutableStateOf(false) }
 
     val updateCheckDisabledUntil = settings.displaySetting.updateCheckDisabledUntilEpochMillis
     var updateChecksEnabled by remember(updateCheckDisabledUntil) {
@@ -398,32 +396,18 @@ fun ChatDrawerContent(
                     },
                 )
 
-                Box {
-                    DrawerAction(
-                        icon = {
-                            Icon(HugeIcons.Sparkles, "Menu")
-                        },
-                        label = {
-                            Text(stringResource(R.string.menu))
-                        },
-                        onClick = {
-                            showMenuPopup = true
-                        },
-                    )
-                    DropdownMenu(
-                        expanded = showMenuPopup,
-                        onDismissRequest = { showMenuPopup = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(R.string.chat_page_menu_image_generation)) },
-                            leadingIcon = { Icon(HugeIcons.Image02, null) },
-                            onClick = {
-                                showMenuPopup = false
-                                navController.navigate(Screen.ImageGen)
-                            }
-                        )
-                    }
-                }
+                // 工具链扩展商店（原图像生成入口已替换）
+                DrawerAction(
+                    icon = {
+                        Icon(HugeIcons.ComputerTerminal01, "扩展商店")
+                    },
+                    label = {
+                        Text("扩展商店")
+                    },
+                    onClick = {
+                        navController.navigate(Screen.Toolchains)
+                    },
+                )
 
                 DrawerAction(
                     icon = {
