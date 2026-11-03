@@ -41,7 +41,7 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         timeoutSeconds: Int,
     ): Bundle {
         val result = Bundle()
-        var process: java.lang.Process? = null
+        var proc: java.lang.Process? = null
         try {
             val builder = ProcessBuilder(argv)
             if (!workingDirectory.isNullOrBlank()) {
@@ -56,38 +56,39 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
                     }
                 }
             }
-            process = builder.start()
-            runCatching { process.outputStream.close() }
+            val p = builder.start()
+            proc = p
+            runCatching { p.outputStream.close() }
 
             val output = StringBuilder()
             val stdoutThread = Thread {
-                drain(process.inputStream, output)
+                drain(p.inputStream, output)
             }.apply { isDaemon = true; start() }
             val stderrThread = Thread {
-                drain(process.errorStream, output)
+                drain(p.errorStream, output)
             }.apply { isDaemon = true; start() }
 
             val finished = if (timeoutSeconds > 0) {
-                process.waitFor(timeoutSeconds.toLong(), TimeUnit.SECONDS)
+                p.waitFor(timeoutSeconds.toLong(), TimeUnit.SECONDS)
             } else {
-                process.waitFor()
+                p.waitFor()
                 true
             }
             if (!finished) {
-                runCatching { process.destroyForcibly() }
+                runCatching { p.destroyForcibly() }
             }
             stdoutThread.join(DRAIN_JOIN_MILLIS)
             stderrThread.join(DRAIN_JOIN_MILLIS)
 
             result.putBoolean(KEY_TIMED_OUT, !finished)
-            result.putInt(KEY_EXIT_CODE, if (finished) runCatching { process.exitValue() }.getOrDefault(EXIT_INVALID) else EXIT_TIMEOUT)
+            result.putInt(KEY_EXIT_CODE, if (finished) runCatching { p.exitValue() }.getOrDefault(EXIT_INVALID) else EXIT_TIMEOUT)
             result.putString(KEY_OUTPUT, synchronized(output) { output.toString() })
         } catch (t: Throwable) {
             result.putBoolean(KEY_TIMED_OUT, false)
             result.putInt(KEY_EXIT_CODE, EXIT_INVALID)
             result.putString(KEY_OUTPUT, t.message ?: t.toString())
         } finally {
-            runCatching { process?.destroyForcibly() }
+            runCatching { proc?.destroyForcibly() }
         }
         return result
     }
