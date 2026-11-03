@@ -379,6 +379,11 @@ private fun StoreCard(
                             color = MaterialTheme.colorScheme.tertiary,
                             fontWeight = FontWeight.SemiBold,
                         )
+                        item.isInstalled && item.installed?.hasCommands == false -> Text(
+                            "库",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                         item.isInstalled -> Text(
                             "已安装",
                             style = MaterialTheme.typography.labelSmall,
@@ -398,6 +403,13 @@ private fun StoreCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (ext.id == "mobicode.tool.git") {
+                    Text(
+                        "⚠ 此扩展的 HTTP 操作不可用，建议安装 Termux Git",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
                 if (ext.depends.isNotEmpty()) {

@@ -188,6 +188,10 @@ class ExtensionInstaller(
         val result = LinkedHashMap<String, ToolchainExtension>()
         val queue = ArrayDeque<String>()
         entry.depends.forEach { queue.add(it) }
+        // git/curl/openssl 类需要 ca-certificates 提供 HTTPS 证书
+        if (entry.id == "termux.git" || entry.depends.any { it.contains("curl", true) || it.contains("openssl", true) || it == "git" }) {
+            queue.add("ca-certificates")
+        }
         while (queue.isNotEmpty()) {
             val name = queue.removeFirst()
             if (name.isBlank()) continue
@@ -265,6 +269,7 @@ class ExtensionInstaller(
                 category = entry.category,
                 downloadUrl = entry.downloadUrl,
                 format = if (isDeb) "deb" else "mcext",
+                hasCommands = File(payloadDir, "bin").listFiles()?.any { it.isFile } == true,
                 envVars = envVars,
             )
             val map = _installed.value.toMutableMap()
