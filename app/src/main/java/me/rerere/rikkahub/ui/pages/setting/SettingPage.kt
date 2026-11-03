@@ -303,9 +303,9 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
                     )
                     // 所有文件访问（MANAGE_EXTERNAL_STORAGE 是特殊权限，需跳系统设置授权）
+                    val ctx = LocalContext.current
                     item(
                         onClick = {
-                            val ctx = LocalContext.current
                             val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                                 Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                                     data = Uri.parse("package:" + ctx.packageName)
