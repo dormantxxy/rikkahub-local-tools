@@ -277,6 +277,10 @@ class ExtensionInstaller(
             archive.delete()
             workDir.deleteRecursively()
         }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        Result.failure(e)
     }
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
