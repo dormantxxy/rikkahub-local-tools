@@ -30,7 +30,6 @@ import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.files.FileFolders
 import me.rerere.rikkahub.data.localtools.ShizukuHelper
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.rikkahub.data.localtools.ShellMode
 import me.rerere.rikkahub.shizuku.ShizukuShellManager
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.remote.ModelsDevUpdater
@@ -93,18 +92,6 @@ class RikkaHubApp : Application() {
         // 每次打开 App 轻量检查一次 root 状态并缓存（之后各处只读缓存，不再启动 su）
         get<AppScope>().launch(Dispatchers.IO) {
             runCatching { get<ShellExecutor>().refreshPrivilegeCache() }
-            // 自动授予「所有文件访问」权限（工作区文件放在 /storage/emulated/0/RikkaHub）
-            runCatching {
-                val executor = get<ShellExecutor>()
-                val mode = executor.preferredMode()
-                if (mode != ShellMode.NORMAL) {
-                    executor.execute(
-                        "appops set ${packageName} MANAGE_EXTERNAL_STORAGE allow",
-                        timeoutMillis = 10_000,
-                        mode = mode,
-                    )
-                }
-            }
         }
 
         // set cursor window size to 32MB

@@ -53,12 +53,8 @@ class WorkspaceRepository(
         for (workspace in workspaces) {
             // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
             if (!workspace.capabilities().localFiles) continue
-            // 旧版工作区文件在私有目录，迁移到外部存储（仅当外部目标不存在时）
-            manager.migrateLegacyFiles(workspace.root)
             val dir = manager.workspaceDir(workspace.root)
             if (!dir.exists()) {
-                // 旧文件还在私有目录说明是迁移未完成（如外部存储权限未就绪），保留状态等下次重试
-                if (manager.hasLegacyFiles(workspace.root)) continue
                 // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
                 // 仅标记为 BROKEN 以保留记录与助手绑定, 避免误删用户工作区
                 Log.w(TAG, "Workspace directory missing, marking as broken: id=${workspace.id}, root=${workspace.root}")
