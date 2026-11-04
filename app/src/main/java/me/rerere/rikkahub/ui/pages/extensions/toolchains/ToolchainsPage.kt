@@ -263,7 +263,7 @@ private fun filterForCategory(
     builtInIds: Set<String>,
 ): List<ToolchainItem> = when (category) {
     "全部" -> items
-    "精选" -> items.filter { it.ext.id in builtInIds || it.isInstalled }
+    "精选" -> items.filter { it.ext.id in builtInIds }
     "已安装" -> items.filter { it.isInstalled }
     else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
 }

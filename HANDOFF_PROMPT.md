@@ -55,3 +55,11 @@
 3. 构建走 GitHub Actions（`dormantxxy/rikkahub-local-tools`，仓库已公开）。
 4. **每次构建发布新 Release（tag 唯一，不覆盖），必须写修改说明**。
 5. 版本号：`versionCode = 194 + RIKKAHUB_VERSION_BUMP(run_number)`，versionName=3.1.1。
+
+## 五、待修复（用户确认的方案，等命令实施）
+1. **run_shell_command 跑扩展二进制失败**（CANNOT LINK：缺扩展 LD_LIBRARY_PATH）。
+   方案 A（自动分流）：执行前查命令第一个词是否在扩展 payload/bin，是→用 ToolchainEnvironment 聚合环境跑；否→系统环境（pm/am/dumpsys 不被污染）。注意不能用方案 C 全量注入（/system/bin/curl 会符号冲突）。
+2. **run_shell_command 与 run_cli 默认工作目录不一致**（前者 files/，后者 files/RikkaHub/）。
+   统一到 files/RikkaHub/：`buildRunShellTool(shellExecutor, defaultDir)` 的 defaultDir 换成 rikkahubWorkDir（LocalTools.kt 一行改动）。
+3. **AI 无确认可改系统设置**（实测 AI 调 run_shell_command 执行 settings put 改了屏幕旋转）。
+   建议：设备命令审批默认开启，或把 settings put 等加入 LocalDeviceTools.kt 的 DANGEROUS_PATTERNS。
