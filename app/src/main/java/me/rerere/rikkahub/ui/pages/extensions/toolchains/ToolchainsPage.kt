@@ -22,6 +22,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Card
@@ -62,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
+import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
@@ -336,6 +338,17 @@ private fun CompactSearchBar(
                         )
                     }
                     innerTextField()
+                    if (value.isNotEmpty()) {
+                        Icon(
+                            HugeIcons.Cancel01,
+                            contentDescription = "清空",
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clip(CircleShape)
+                                .clickable { onValueChange("") },
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
             )
         }
@@ -497,7 +510,7 @@ private fun StoreCard(
                         if (progress != null && progress.phase != InstallPhase.INSTALLING) {
                             OutlinedButton(onClick = onCancel) { Text("取消安装") }
                         } else if (progress != null && progress.dependencyNote == "正在卸载…") {
-                            // 卸载中显示进度，无按钮
+                            OutlinedButton(onClick = {}, enabled = false) { Text("卸载中…") }
                         } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {
