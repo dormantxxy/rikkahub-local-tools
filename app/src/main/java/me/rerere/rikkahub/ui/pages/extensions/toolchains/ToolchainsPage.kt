@@ -62,9 +62,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Search01
+import me.rerere.rikkahub.data.localtools.InstallPhase
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -144,9 +146,10 @@ fun ToolchainsPage() {
                                 // 点击顶栏回到当前分类页顶部
                                 focusManager.clearFocus()
                                 val idx = pagerState.currentPage
-                                runCatching {
+                                val targetState = pageListStates.getOrNull(idx)
+                                if (targetState != null) {
                                     scope.launch {
-                                        pageListStates.getOrNull(idx)?.animateScrollToItem(0)
+                                        runCatching { targetState.animateScrollToItem(0) }
                                     }
                                 }
                             }
