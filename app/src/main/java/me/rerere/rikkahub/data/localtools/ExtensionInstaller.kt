@@ -303,27 +303,12 @@ class ExtensionInstaller(
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
             val current = _installed.value
-            val target = current[id] ?: return@runCatching
-            val removed = mutableListOf<String>()
-            fun removeWithDeps(rid: String, chain: MutableSet<String>) {
-                if (rid in chain) return
-                chain.add(rid)
-                val rec = current[rid] ?: return
-                // 依赖也删（只有没有其他已装包依赖它时才删）
-                rec.depends.forEach { depId ->
-                    val isUsedByOthers = current.any { (otherId, other) ->
-                        otherId != rid && otherId != depId && other.depends.contains(depId)
-                    }
-                    if (!isUsedByOthers) removeWithDeps(depId, chain)
-                }
-                removed.add(rid)
-            }
-            removeWithDeps(id, mutableSetOf())
+            if (!current.containsKey(id)) return@runCatching
+            // 保守模式：只删主包本身，不级联删依赖。
+            // 原因：历史安装数据的 depends 可能缺失/不完整，级联判断会误删共享依赖（实测删过 git 的 libiconv）。
+            File(extRoot, id).deleteRecursively()
             val map = current.toMutableMap()
-            removed.forEach { rid ->
-                File(extRoot, rid).deleteRecursively()
-                map.remove(rid)
-            }
+            map.remove(id)
             saveManifest(map)
             _installed.value = map
         }
