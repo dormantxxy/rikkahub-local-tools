@@ -1,6 +1,7 @@
 package me.rerere.rikkahub.data.ai.tools.local
 
 import android.util.Base64
+import java.io.File
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -9,7 +10,10 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
+import me.rerere.rikkahub.data.localtools.ShellResult
+import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
 
 // 精确的危险命令判断：避免 rm -rf /data/... 这类安全路径被误判
@@ -28,8 +32,13 @@ private val DANGEROUS_PATTERNS = listOf(
 )
 private fun isDangerous(text: String): Boolean = DANGEROUS_PATTERNS.any { it.containsMatchIn(text.lowercase()) }
 
-/** 设备 Shell：root(su) 优先，否则普通权限。 */
-internal fun buildRunShellTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(
+/** 设备 Shell：root(su) 优先，否则普通权限。命令首词命中扩展 bin 时自动切工具链环境。 */
+internal fun buildRunShellTool(
+    executor: ShellExecutor,
+    defaultDir: String,
+    toolchainExecutor: ToolchainExecutor? = null,
+    installer: ExtensionInstaller? = null,
+): Tool = Tool(
     name = "run_shell_command",
     description = "Execute a shell command on the Android device (root via su if available, else normal app permission). Params: command, cwd(optional), timeout_seconds(optional).",
     parameters = {
@@ -50,9 +59,23 @@ internal fun buildRunShellTool(executor: ShellExecutor, defaultDir: String): Too
         val timeoutMs = (p["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000) ?: 60_000.0)
             .toLong().coerceIn(1_000L, 600_000L)
         val mode = executor.preferredMode()
-        val r = executor.execute(cmd, cwd = cwd, timeoutMillis = timeoutMs, mode = mode)
+        // 自动分流：命令首词命中任一已装扩展的 payload/bin，则用聚合工具链环境执行
+        // （否则扩展二进制因缺 LD_LIBRARY_PATH 会 CANNOT LINK，系统命令 pm/am/dumpsys 则保持系统环境不被污染）
+        val firstWord = cmd.trimStart().split(Regex("[\s;&|]")).firstOrNull { it.isNotBlank() }?.substringAfterLast('/')
+        val useToolchain = installer != null && toolchainExecutor != null &&
+            firstWord != null &&
+            installer.installed.value.values.any { rec ->
+                File(rec.payloadDir, "bin").listFiles()?.any { it.name == firstWord } == true
+            }
+        val r = if (useToolchain) {
+            val tr = toolchainExecutor.run(cmd, cwd = cwd, timeoutMillis = timeoutMs)
+            ShellResult(tr.exitCode, tr.stdout, tr.stderr, tr.timedOut)
+        } else {
+            executor.execute(cmd, cwd = cwd, timeoutMillis = timeoutMs, mode = mode)
+        }
         listOf(UIMessagePart.Text(buildJsonObject {
-            put("mode", mode.name.lowercase()); put("exit_code", r.exitCode); put("timed_out", r.timedOut)
+            put("mode", if (useToolchain) "toolchain" else mode.name.lowercase())
+            put("exit_code", r.exitCode); put("timed_out", r.timedOut)
             put("stdout", r.stdout.take(60_000)); put("stderr", r.stderr.take(20_000))
         }.toString()))
     }

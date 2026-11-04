@@ -32,10 +32,10 @@ class LocalTools(
     val chartDisplayTool by lazy { buildChartDisplayTool() }
 
     // ===== 本地工具（设备 Shell / 文件 / 检索 / 文件树 / 网页浏览 / CLI 工具链） =====
-    val runShellTool by lazy { buildRunShellTool(shellExecutor, defaultDir) }
-    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, defaultDir) }
-    val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, defaultDir) }
-    val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, defaultDir) }
+    val runShellTool by lazy { buildRunShellTool(shellExecutor, rikkahubWorkDir, toolchainExecutor, extensionInstaller) }
+    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, rikkahubWorkDir) }
+    val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, rikkahubWorkDir) }
+    val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, rikkahubWorkDir) }
     val webFetchTool by lazy { buildWebFetchTool() }
     val runCliTool by lazy { buildRunCliTool(toolchainExecutor, rikkahubWorkDir) }
 
