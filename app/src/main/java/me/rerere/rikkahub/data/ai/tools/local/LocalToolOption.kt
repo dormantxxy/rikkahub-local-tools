@@ -81,4 +81,9 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("logcat")
     data object Logcat : LocalToolOption()
+
+    /** 应用管理：列出/启动/停止/提取 APK（需 root 或 Shizuku）。 */
+    @Serializable
+    @SerialName("app_manager")
+    data object AppManager : LocalToolOption()
 }

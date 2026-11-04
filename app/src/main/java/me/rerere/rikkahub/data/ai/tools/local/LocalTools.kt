@@ -49,6 +49,7 @@ class LocalTools(
     val uiDumpTool by lazy { buildUiDumpTool(shellExecutor) }
     val screenshotTool by lazy { buildScreenshotTool(context, shellExecutor) }
     val logcatTool by lazy { buildLogcatTool(shellExecutor) }
+    val appManagerTool by lazy { buildAppManagerTool(shellExecutor) }
 
     fun getTools(
         options: List<LocalToolOption>,
@@ -97,6 +98,7 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.Screenshot) && toolchainExecutor.hasPrivilege()) tools.add(screenshotTool)
         if (options.contains(LocalToolOption.Logcat) && toolchainExecutor.hasPrivilege()) tools.add(logcatTool)
+        if (options.contains(LocalToolOption.AppManager) && toolchainExecutor.hasPrivilege()) tools.add(appManagerTool)
         return tools
     }
 }

@@ -48,6 +48,7 @@ data class Assistant(
         LocalToolOption.Files,
         LocalToolOption.Shell,
         LocalToolOption.Cli,
+        LocalToolOption.AppManager,
     ),
     /** 设备 Shell（run_shell_command）执行前是否需要用户审批，默认关闭。 */
     val deviceShellApproval: Boolean = false,
