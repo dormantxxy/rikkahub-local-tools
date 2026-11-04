@@ -171,13 +171,20 @@ class ShellExecutor(
     }
 
     private fun startRoot(command: String, cwd: String?): Process {
+        // Magisk su 的挂载命名空间与 init 不同（/data/data 只见自己），
+        // 用 nsenter 进入 init(pid 1) 的 mnt 命名空间恢复完整可见性（与 ShizukuShellService 一致）。
+        // 实测：su -c "nsenter -t 1 -m -- sh -c ..." 能看到全部 329 个 /data/data 目录。
         val full = buildString {
-            if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" && ") }
-            append(command)
+            append("nsenter -t 1 -m -- sh -c ")
+            append((buildString {
+                if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" && ") }
+                append(command)
+            }).shellQuote())
         }
         val p = Runtime.getRuntime().exec(arrayOf("su", "-c", full))
         runCatching { p.outputStream.close() }; return p
     }
+
 
     private suspend fun awaitProcess(process: Process, timeoutMillis: Long): ShellResult {
         val outBuf = StringBuilder(); val errBuf = StringBuilder()
