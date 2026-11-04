@@ -51,3 +51,4 @@ RikkaHub 3.1.1 增强版
 - run_shell_command 自动分流：命令首词命中已装扩展时自动用聚合工具链环境执行（扩展二进制不再 CANNOT LINK）
 - 默认工作目录统一到 files/RikkaHub/（run_shell_command / manage_files / search_code / file_tree 与 run_cli 一致）
 - 商店「精选」只显示内置 17 个扩展（不再混入已安装的 Termux 包和依赖）
+- su 调用改用 /system/bin/su 绝对路径（避免 PATH 里假 su 劫持）
