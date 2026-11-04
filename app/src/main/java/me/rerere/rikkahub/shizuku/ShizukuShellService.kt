@@ -43,7 +43,15 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         val result = Bundle()
         var proc: java.lang.Process? = null
         try {
-            val builder = ProcessBuilder(argv)
+            // root 进程的挂载命名空间与 init 不同，/data/data 下只能看到自己的目录。
+            // 通过 nsenter 进入 init(pid 1) 的挂载命名空间，恢复完整 /data/data 可见性。
+            // Magisk root 的 mnt ns 与 init 不同；Shizuku UserService 继承 Shizuku 的 ns（与 init 相同或不同）。
+            val effectiveArgv: List<String> = if (AndroidProcess.myUid() == 0) {
+                listOf("nsenter", "-t", "1", "-m", "--") + argv
+            } else {
+                argv
+            }
+            val builder = ProcessBuilder(effectiveArgv)
             if (!workingDirectory.isNullOrBlank()) {
                 builder.directory(File(workingDirectory))
             }
