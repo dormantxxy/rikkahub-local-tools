@@ -60,3 +60,5 @@
 1. ✅ **run_shell_command 自动分流**（已实施）：命令首词命中扩展 payload/bin → ToolchainExecutor 聚合环境执行；否则系统环境。
 2. ✅ **默认工作目录统一 files/RikkaHub/**（已实施）：runShellTool/manageFilesTool/searchCodeTool/fileTreeTool 全部 rikkahubWorkDir。
 3. AI 无确认可改系统设置：用户决定不改（不加危险名单/审批默认值不变）。
+4. ⚠️ **nsenter 修复只覆盖 Shizuku，Magisk root 路径缺**（实测 su -c 只见 3 个 /data/data 目录，Shizuku 路径 325 个）。
+   修复：ShellExecutor.startRoot 的 su -c 命令加 nsenter -t 1 -m -- 前缀（su -c "nsenter -t 1 -m -- sh -c ..." 实测可行）。
