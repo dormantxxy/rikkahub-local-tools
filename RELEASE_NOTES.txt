@@ -52,3 +52,5 @@ RikkaHub 3.1.1 增强版
 - 默认工作目录统一到 files/RikkaHub/（run_shell_command / manage_files / search_code / file_tree 与 run_cli 一致）
 - 商店「精选」只显示内置 17 个扩展（不再混入已安装的 Termux 包和依赖）
 - su 调用改用 /system/bin/su 绝对路径（避免 PATH 里假 su 劫持）
+- 商店依赖包沉底显示，不与其他包交叉
+- 卸载主包级联卸载未被共用的依赖
