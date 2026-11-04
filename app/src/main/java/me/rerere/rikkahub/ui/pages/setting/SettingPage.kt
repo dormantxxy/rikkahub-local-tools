@@ -273,6 +273,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 val storageState by produceState(-1 to 0L) {
                     value = filesManager.countChatFiles()
                 }
+                val ctx = LocalContext.current
                 val containerColor = MaterialTheme.colorScheme.secondaryContainer
                 val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                 CardGroup(
@@ -303,7 +304,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
                     )
                     // 所有文件访问（MANAGE_EXTERNAL_STORAGE 是特殊权限，需跳系统设置授权）
-                    val ctx = LocalContext.current
                     item(
                         onClick = {
                             val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
