@@ -144,7 +144,7 @@ class ShellExecutor(
             when (mode) {
                 ShellMode.ROOT -> {
                     val process = try {
-                        Runtime.getRuntime().exec(arrayOf("su", "-c", script))
+                        Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c", script))
                     } catch (e: Throwable) {
                         return@withContext ShellResult(-1, "", (e.message ?: "执行失败") + "（mode=$mode）")
                     }
@@ -181,7 +181,8 @@ class ShellExecutor(
                 append(command)
             }).shellQuote())
         }
-        val p = Runtime.getRuntime().exec(arrayOf("su", "-c", full))
+        // 绝对路径：避免 termux.tools 等扩展在 PATH 里放置的假 su 劫持
+        val p = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c", full))
         runCatching { p.outputStream.close() }; return p
     }
 
