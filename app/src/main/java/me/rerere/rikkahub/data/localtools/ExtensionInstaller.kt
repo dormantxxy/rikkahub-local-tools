@@ -37,6 +37,8 @@ data class InstalledRecord(
     val format: String = "mcext",
     /** 是否有可执行命令（false 表示只是库/运行时/插件包）。 */
     val hasCommands: Boolean = true,
+    /** 安装时的依赖列表（Termux deb），卸载时用于级联清理。 */
+    val depends: List<String> = emptyList(),
     /**
      * 安装时保存的扩展环境变量（照搬 MobiCode Studio 的 ExtensionEnvironmentGroup.variables）：
      * PATH / LD_LIBRARY_PATH / LIBRARY_PATH / CPATH / MOBICODE_SYSROOT
@@ -276,6 +278,7 @@ class ExtensionInstaller(
                 downloadUrl = entry.downloadUrl,
                 format = if (isDeb) "deb" else "mcext",
                 hasCommands = File(payloadDir, "bin").listFiles()?.any { it.isFile } == true,
+                depends = entry.depends.map { dep -> dep.substringBefore('(').trim() }.mapNotNull { name -> MobiCodeCatalog.findTermuxPackage(context, name)?.id },
                 envVars = envVars,
             )
             val map = _installed.value.toMutableMap()
@@ -299,9 +302,28 @@ class ExtensionInstaller(
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            File(extRoot, id).deleteRecursively()
-            val map = _installed.value.toMutableMap()
-            map.remove(id)
+            val current = _installed.value
+            val target = current[id] ?: return@runCatching
+            val removed = mutableListOf<String>()
+            fun removeWithDeps(rid: String, chain: MutableSet<String>) {
+                if (rid in chain) return
+                chain.add(rid)
+                val rec = current[rid] ?: return
+                // 依赖也删（只有没有其他已装包依赖它时才删）
+                rec.depends.forEach { depId ->
+                    val isUsedByOthers = current.any { (otherId, other) ->
+                        otherId != rid && otherId != depId && other.depends.contains(depId)
+                    }
+                    if (!isUsedByOthers) removeWithDeps(depId, chain)
+                }
+                removed.add(rid)
+            }
+            removeWithDeps(id, mutableSetOf())
+            val map = current.toMutableMap()
+            removed.forEach { rid ->
+                File(extRoot, rid).deleteRecursively()
+                map.remove(rid)
+            }
             saveManifest(map)
             _installed.value = map
         }

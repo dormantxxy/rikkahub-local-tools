@@ -143,7 +143,10 @@ class ToolchainsVM(
                 .sortedBy { it.installedAt }
                 .map { recordToExtension(it) }
             val all = (builtIn + termux + installedOnly).distinctBy { it.id }
-            val filtered = if (q.isNotBlank()) all.filter { matches(it, q) } else all
+            // 依赖包沉底：被其他已装包依赖的（纯依赖，如 libcurl/libssl）排在最后，不和主包交叉
+            val dependencyIds = map.values.flatMap { it.depends }.toSet()
+            val sorted = all.sortedBy { ext -> if (ext.id in dependencyIds) 1 else 0 }
+            val filtered = if (q.isNotBlank()) sorted.filter { matches(it, q) } else sorted
             filtered.map { ToolchainItem(it, map[it.id]) }
         }.stateIn(viewModelScope, SharingStarted.Lazily, builtIn.map { ToolchainItem(it, null) })
 
@@ -223,6 +226,7 @@ class ToolchainsVM(
         licenseName = "",
         minimumAppVersion = 0,
         format = rec.format,
+        depends = rec.depends,
     )
 
     private fun computePrivilege(): String = when {
