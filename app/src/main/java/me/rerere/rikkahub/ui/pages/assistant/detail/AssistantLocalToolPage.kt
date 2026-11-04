@@ -116,6 +116,7 @@ private fun AssistantLocalToolContent(
         LocalToolOption.UiAutomation,
         LocalToolOption.Screenshot,
         LocalToolOption.Logcat,
+        LocalToolOption.AppManager,
     )
     androidx.compose.runtime.LaunchedEffect(hasPrivilege) {
         var updated = assistant.localTools
@@ -299,6 +300,7 @@ private fun AssistantLocalToolContent(
             toolItemRaw(option = LocalToolOption.UiAutomation, icon = HugeIcons.SmartPhone01, title = "界面自动化", description = if (hasPrivilege) "点击 / 滑动 / 输入文本 / 查看控件树" else "需要高级权限", enabled = hasPrivilege)
             toolItemRaw(option = LocalToolOption.Screenshot, icon = HugeIcons.SmartPhone01, title = "截屏", description = if (hasPrivilege) "截取屏幕并保存" else "需要高级权限", enabled = hasPrivilege)
             toolItemRaw(option = LocalToolOption.Logcat, icon = HugeIcons.Code, title = "日志读取", description = if (hasPrivilege) "读取系统与应用日志" else "需要高级权限", enabled = hasPrivilege)
+            toolItemRaw(option = LocalToolOption.AppManager, icon = HugeIcons.SmartPhone01, title = "应用管理", description = if (hasPrivilege) "列出 / 启动 / 停止应用，提取 APK" else "需要高级权限", enabled = hasPrivilege)
             // 设备命令审批：与工具列表同风格，默认关闭
             switchItem(
                 checked = assistant.deviceShellApproval,
