@@ -44,3 +44,4 @@ RikkaHub 3.1.1 增强版
 最新版本更新：
 - 新增「应用管理」本地工具：list_apps / app_info / launch_app / force_stop / extract_apk（需 root/Shizuku）
 - 修复 root shell 挂载命名空间隔离：自动 nsenter 进入 init 命名空间，/data/data 下所有应用完整可见
+- 本地工具页新增「应用管理」开关（需 root/Shizuku）
