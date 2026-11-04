@@ -53,6 +53,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,7 +76,8 @@ import org.koin.androidx.compose.koinViewModel
 fun ToolchainsPage() {
     val vm: ToolchainsVM = koinViewModel()
     val itemList by vm.items.collectAsStateWithLifecycle()
-    val progress by vm.progress.collectAsStateWithLifecycle()
+    val progressMap by vm.progress.collectAsStateWithLifecycle()
+    val progress = progressMap
     val message by vm.message.collectAsStateWithLifecycle()
     val query by vm.query.collectAsStateWithLifecycle()
     val category by vm.category.collectAsStateWithLifecycle()
@@ -83,12 +87,16 @@ fun ToolchainsPage() {
     val termuxError by vm.termuxError.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     val categories = MobiCodeCatalog.CATEGORIES
     val builtInIds = remember(vm.builtIn) { vm.builtIn.map { it.id }.toSet() }
 
     val pagerState = rememberPagerState(
         initialPage = categories.indexOf(category).coerceAtLeast(0),
     ) { categories.size }
+
+    // 每个分类页的列表状态（顶栏点击回到该页顶部）
+    val pageListStates = remember(categories.size) { List(categories.size) { androidx.compose.foundation.lazy.LazyListState() } }
 
     // 分类 tab 与左右滑动 Pager 双向同步（跟手滑动）
     LaunchedEffect(pagerState) {
@@ -125,7 +133,24 @@ fun ToolchainsPage() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("扩展商店") },
+                title = {
+                    Text(
+                        "扩展商店",
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable {
+                                // 点击顶栏回到当前分类页顶部
+                                focusManager.clearFocus()
+                                val idx = pagerState.currentPage
+                                runCatching {
+                                    scope.launch {
+                                        pageListStates.getOrNull(idx)?.animateScrollToItem(0)
+                                    }
+                                }
+                            }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                },
                 navigationIcon = { BackButton() },
                 colors = CustomColors.topBarColors,
             )
@@ -197,8 +222,8 @@ fun ToolchainsPage() {
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) { page ->
                 val cat = categories[page]
-                val pageItems = remember(itemList, cat) { filterForCategory(itemList, cat, builtInIds) }
-                val pageListState = rememberLazyListState()
+                val pageItems = remember(itemList, cat, builtInIds, query) { filterForCategory(itemList, cat, builtInIds, query.isNotBlank()) }
+                val pageListState = pageListStates.getOrNull(page) ?: rememberLazyListState()
                 LaunchedEffect(pageListState.isScrollInProgress) {
                     if (pageListState.isScrollInProgress) focusManager.clearFocus()
                 }
@@ -230,7 +255,7 @@ fun ToolchainsPage() {
                             item {
                                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                                     Text(
-                                        if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
+                                        if (query.isBlank()) "暂无扩展" else if (cat != "全部") "搜索结果显示在「全部」栏" else "没有找到相关扩展",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -240,13 +265,13 @@ fun ToolchainsPage() {
                         items(pageItems, key = { it.ext.id }) { item ->
                             StoreCard(
                                 item = item,
-                                progress = progress?.takeIf { it.id == item.ext.id },
-                                busy = progress != null,
+                                progress = progressMap[item.ext.id],
+                                busy = false,
                                 selectedVersion = selectedVersions[item.ext.id] ?: item.ext.availableVersions.first().version,
                                 onSelectVersion = { vm.selectVersion(item.ext, it) },
                                 onInstall = { vm.install(item.ext) },
                                 onUninstall = { vm.uninstall(item.ext) },
-                                onCancel = { vm.cancelInstall() },
+                                onCancel = { vm.cancelInstall(item.ext.id) },
                             )
                         }
                     }
@@ -256,16 +281,21 @@ fun ToolchainsPage() {
     }
 }
 
-/** 按分类过滤商店列表。 */
+/** 按分类过滤商店列表。搜索时只显示在「全部」栏（不按分类拆散搜索结果）。 */
 private fun filterForCategory(
     items: List<ToolchainItem>,
     category: String,
     builtInIds: Set<String>,
-): List<ToolchainItem> = when (category) {
-    "全部" -> items
-    "精选" -> items.filter { it.ext.id in builtInIds }
-    "已安装" -> items.filter { it.isInstalled }
-    else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
+    searching: Boolean,
+): List<ToolchainItem> {
+    // 搜索状态下所有结果都显示在「全部」栏，其它栏为空（结果不按分类拆散）
+    if (searching && category != "全部") return emptyList()
+    return when (category) {
+        "全部" -> items
+        "精选" -> items.filter { it.ext.id in builtInIds }
+        "已安装" -> items.filter { it.isInstalled }
+        else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
+    }
 }
 
 /** 紧凑搜索框（正常搜索框高度）。 */
@@ -343,6 +373,8 @@ private fun StoreCard(
     val ext: ToolchainExtension = item.ext
     var versionMenuExpanded by remember { mutableStateOf(false) }
     val iconColor = categoryColor(ext.category)
+    // 自己进行中 = busy；其他包的安装/卸载不影响本卡片按钮
+    val selfBusy = progress != null || busy
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -437,7 +469,7 @@ private fun StoreCard(
                     // 版本选择：始终可点击选择（Termux 包也显示当前版本）
                     // 版本号最多显示 20 字符，避免超长版本把右侧卸载按钮顶走
                     Box(modifier = Modifier.weight(1f, fill = false)) {
-                        TextButton(onClick = { versionMenuExpanded = true }, enabled = !busy) {
+                        TextButton(onClick = { versionMenuExpanded = true }, enabled = !selfBusy) {
                             val versionText = if (selectedVersion.length > 20) selectedVersion.take(20) + "…" else selectedVersion
                             Text(
                                 "版本：v$versionText ▾",
@@ -462,8 +494,10 @@ private fun StoreCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (progress != null) {
+                        if (progress != null && progress.phase != InstallPhase.INSTALLING) {
                             OutlinedButton(onClick = onCancel) { Text("取消安装") }
+                        } else if (progress != null && progress.dependencyNote == "正在卸载…") {
+                            // 卸载中显示进度，无按钮
                         } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {

@@ -113,9 +113,16 @@ class ToolchainsVM(
     private val _termuxError = MutableStateFlow<String?>(null)
     val termuxError: StateFlow<String?> = _termuxError.asStateFlow()
 
-    private val _progress = MutableStateFlow<InstallProgress?>(null)
-    private var installJob: Job? = null
-    val progress: StateFlow<InstallProgress?> = _progress.asStateFlow()
+    /** 每个扩展自己的安装/卸载进度（支持多任务：安装中别的也能装/卸载）。 */
+    private val _progress = MutableStateFlow<Map<String, InstallProgress>>(emptyMap())
+    private val _jobs = mutableMapOf<String, Job>()
+    val progress: StateFlow<Map<String, InstallProgress>> = _progress.asStateFlow()
+
+    /** 单个扩展当前进度（null = 无进行中任务）。 */
+    fun progressOf(id: String): InstallProgress? = _progress.value[id]
+
+    /** 是否有任何进行中的安装/卸载。 */
+    val anyBusy: Boolean get() = _progress.value.isNotEmpty()
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
@@ -143,9 +150,13 @@ class ToolchainsVM(
                 .sortedBy { it.installedAt }
                 .map { recordToExtension(it) }
             val all = (builtIn + termux + installedOnly).distinctBy { it.id }
-            // 依赖包沉底：被其他已装包依赖的（纯依赖，如 libcurl/libssl）排在最后，不和主包交叉
+            // 依赖包沉底 + 其余按名字首字排序（内置不置顶，全部一视同仁）
             val dependencyIds = map.values.flatMap { it.depends }.toSet()
-            val sorted = all.sortedBy { ext -> if (ext.id in dependencyIds) 1 else 0 }
+            val sorted = all.sortedWith(compareBy(
+                { ext -> if (ext.id in dependencyIds) 1 else 0 },
+                { ext -> ext.name.lowercase() },
+                { ext -> ext.id }
+            ))
             val filtered = if (q.isNotBlank()) sorted.filter { matches(it, q) } else sorted
             filtered.map { ToolchainItem(it, map[it.id]) }
         }.stateIn(viewModelScope, SharingStarted.Lazily, builtIn.map { ToolchainItem(it, null) })
@@ -243,9 +254,9 @@ class ToolchainsVM(
         viewModelScope.launch { delay(1500); refreshPrivilege() }
     }
 
-    /** 安装指定版本的扩展（自动安装依赖，点击后立即显示进度）。 */
+    /** 安装指定版本的扩展（自动安装依赖，后台队列，支持多任务）。 */
     fun install(ext: ToolchainExtension) {
-        if (_progress.value != null) return
+        if (_progress.value.containsKey(ext.id)) return
         val version = ext.availableVersions.firstOrNull { it.version == selectedVersion(ext) }
             ?: ext.availableVersions.first()
         val target = ext.copy(
@@ -256,26 +267,26 @@ class ToolchainsVM(
             format = version.format,
         )
         // 立即显示进度（不等网络响应）
-        _progress.value = InstallProgress(
+        _progress.value = _progress.value + (ext.id to InstallProgress(
             id = ext.id,
             phase = InstallPhase.DOWNLOADING,
             downloaded = 0,
             total = version.downloadSize,
             dependencyNote = "准备下载…",
-        )
-        installJob = viewModelScope.launch {
+        ))
+        _jobs[ext.id] = viewModelScope.launch {
             _message.value = null
             val result = installer.install(target) { upd ->
-                _progress.value = InstallProgress(
+                _progress.value = _progress.value + (ext.id to InstallProgress(
                     id = ext.id, phase = upd.phase,
                     downloaded = upd.downloaded, total = upd.total,
                     extracted = upd.extracted, entries = upd.entries,
                     currentEntry = upd.currentEntry,
                     dependencyNote = upd.dependencyNote,
-                )
+                ))
             }
-            _progress.value = null
-            installJob = null
+            _progress.value = _progress.value - ext.id
+            _jobs.remove(ext.id)
             _message.value = result.fold(
                 onSuccess = { "已安装 ${ext.name} ${version.version}" },
                 onFailure = { "安装失败：${it.message ?: "未知错误"}" },
@@ -283,25 +294,30 @@ class ToolchainsVM(
         }
     }
 
-    /** 取消当前安装并删除下载缓存。 */
-    fun cancelInstall() {
-        val id = _progress.value?.id
-        installJob?.cancel()
-        installJob = null
-        _progress.value = null
-        if (id != null) {
-            viewModelScope.launch(Dispatchers.IO) {
-                File(context.appTempFolder, "ext_$id").deleteRecursively()
-                _message.value = "已取消安装"
-            }
+    /** 取消指定扩展的安装并删除下载缓存（默认取第一个进行中安装）。 */
+    fun cancelInstall(id: String? = null) {
+        val targetId = id ?: _progress.value.keys.firstOrNull() ?: return
+        _jobs[targetId]?.cancel()
+        _jobs.remove(targetId)
+        _progress.value = _progress.value - targetId
+        viewModelScope.launch(Dispatchers.IO) {
+            File(context.appTempFolder, "ext_" + targetId).deleteRecursively()
+            _message.value = "已取消安装"
         }
     }
 
+    /** 卸载扩展（后台，支持多任务，显示进度）。 */
     fun uninstall(ext: ToolchainExtension) {
-        if (_progress.value != null) return
-        viewModelScope.launch {
-            _message.value = null
+        if (_progress.value.containsKey(ext.id)) return
+        _progress.value = _progress.value + (ext.id to InstallProgress(
+            id = ext.id,
+            phase = InstallPhase.INSTALLING,
+            dependencyNote = "正在卸载…",
+        ))
+        _jobs[ext.id] = viewModelScope.launch(Dispatchers.IO) {
             val result = installer.uninstall(ext.id)
+            _progress.value = _progress.value - ext.id
+            _jobs.remove(ext.id)
             _message.value = result.fold(
                 onSuccess = { "已卸载 ${ext.name}" },
                 onFailure = { "卸载失败：${it.message ?: "未知错误"}" },
