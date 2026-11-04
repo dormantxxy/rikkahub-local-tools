@@ -61,7 +61,7 @@ internal fun buildRunShellTool(
         val mode = executor.preferredMode()
         // 自动分流：命令首词命中任一已装扩展的 payload/bin，则用聚合工具链环境执行
         // （否则扩展二进制因缺 LD_LIBRARY_PATH 会 CANNOT LINK，系统命令 pm/am/dumpsys 则保持系统环境不被污染）
-        val firstWord = cmd.trimStart().split(Regex("[\s;&|]")).firstOrNull { it.isNotBlank() }?.substringAfterLast('/')
+        val firstWord = cmd.trimStart().split(Regex("[\\s;&|]")).firstOrNull { it.isNotBlank() }?.substringAfterLast('/')
         val useToolchain = installer != null && toolchainExecutor != null &&
             firstWord != null &&
             installer.installed.value.values.any { rec ->
