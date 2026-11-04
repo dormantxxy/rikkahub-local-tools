@@ -40,3 +40,7 @@ RikkaHub 3.1.1 增强版
 - 版本号显示限制 20 字符（超长省略，不顶走卸载/更新按钮）
 - 工具链修复：Git 优先使用 Termux Git 2.56（完整 remote helper），自动补 CURL_CA_BUNDLE/GIT_SSL_CAINFO（HTTPS 证书）
 - 内置 17 个扩展镜像到自建仓库 rikkahub-extensions（防源站失效）
+
+最新版本更新：
+- 新增「应用管理」本地工具：list_apps / app_info / launch_app / force_stop / extract_apk（需 root/Shizuku）
+- 修复 root shell 挂载命名空间隔离：自动 nsenter 进入 init 命名空间，/data/data 下所有应用完整可见
