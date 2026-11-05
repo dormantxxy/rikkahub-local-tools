@@ -64,7 +64,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
-import me.rerere.hugeicons.stroke.Cancel01
 import me.rerere.hugeicons.stroke.Search01
 import me.rerere.rikkahub.data.localtools.InstallPhase
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
@@ -125,7 +124,13 @@ fun ToolchainsPage() {
     LaunchedEffect(pagerState.isScrollInProgress) {
         if (pagerState.isScrollInProgress) focusManager.clearFocus()
     }
-    BackHandler(enabled = imeVisible) { focusManager.clearFocus() }
+    // 返回键优先级：有搜索文字→清空退出搜索；焦点在搜索框→清焦点；否则系统默认（关页面）
+    BackHandler(enabled = query.isNotBlank() || imeVisible) {
+        when {
+            query.isNotBlank() -> vm.setQuery("")
+            imeVisible -> focusManager.clearFocus()
+        }
+    }
 
     LaunchedEffect(message) {
         message?.let {
@@ -169,8 +174,15 @@ fun ToolchainsPage() {
                 onValueChange = vm::setQuery,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp, bottom = 4.dp),
             )
-            // ===== 固定区：分类按钮 =====
+            // ===== 固定区：分类按钮（跟随左右滑动联动） =====
+            val chipsState = rememberLazyListState()
+            LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
+                if (!pagerState.isScrollInProgress) {
+                    chipsState.animateScrollToItem(pagerState.currentPage)
+                }
+            }
             LazyRow(
+                state = chipsState,
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
@@ -181,6 +193,13 @@ fun ToolchainsPage() {
                         onClick = {
                             vm.setCategory(cat)
                             focusManager.clearFocus()
+                            val idx = categories.indexOf(cat)
+                            if (idx >= 0) {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(idx)
+                                    pageListStates.getOrNull(idx)?.scrollToItem(0)
+                                }
+                            }
                         },
                         label = { Text(cat, style = MaterialTheme.typography.labelMedium) },
                     )
@@ -227,7 +246,7 @@ fun ToolchainsPage() {
                 modifier = Modifier.fillMaxWidth().weight(1f),
             ) { page ->
                 val cat = categories[page]
-                val pageItems = remember(itemList, cat, builtInIds, query) { filterForCategory(itemList, cat, builtInIds, query.isNotBlank()) }
+                val pageItems = remember(itemList, cat, builtInIds) { filterForCategory(itemList, cat, builtInIds) }
                 val pageListState = pageListStates.getOrNull(page) ?: rememberLazyListState()
                 LaunchedEffect(pageListState.isScrollInProgress) {
                     if (pageListState.isScrollInProgress) focusManager.clearFocus()
@@ -260,7 +279,7 @@ fun ToolchainsPage() {
                             item {
                                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                                     Text(
-                                        if (query.isBlank()) "暂无扩展" else if (cat != "全部") "搜索结果显示在「全部」栏" else "没有找到相关扩展",
+                                        if (query.isBlank()) "暂无扩展" else "没有找到相关扩展",
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
@@ -291,16 +310,11 @@ private fun filterForCategory(
     items: List<ToolchainItem>,
     category: String,
     builtInIds: Set<String>,
-    searching: Boolean,
-): List<ToolchainItem> {
-    // 搜索状态下所有结果都显示在「全部」栏，其它栏为空（结果不按分类拆散）
-    if (searching && category != "全部") return emptyList()
-    return when (category) {
-        "全部" -> items
-        "精选" -> items.filter { it.ext.id in builtInIds }
-        "已安装" -> items.filter { it.isInstalled }
-        else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
-    }
+): List<ToolchainItem> = when (category) {
+    "全部" -> items
+    "精选" -> items.filter { it.ext.id in builtInIds }
+    "已安装" -> items.filter { it.isInstalled }
+    else -> items.filter { MobiCodeCatalog.categoryLabel(it.ext.category) == category }
 }
 
 /** 紧凑搜索框（正常搜索框高度）。 */
@@ -341,17 +355,7 @@ private fun CompactSearchBar(
                         )
                     }
                     innerTextField()
-                    if (value.isNotEmpty()) {
-                        Icon(
-                            HugeIcons.Cancel01,
-                            contentDescription = "清空",
-                            modifier = Modifier
-                                .size(16.dp)
-                                .clip(CircleShape)
-                                .clickable { onValueChange("") },
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+
                 },
             )
         }
@@ -510,10 +514,10 @@ private fun StoreCard(
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (progress != null && progress.phase != InstallPhase.INSTALLING) {
-                            OutlinedButton(onClick = onCancel) { Text("取消安装") }
-                        } else if (progress != null && progress.dependencyNote == "正在卸载…") {
+                        if (progress != null && progress.dependencyNote == "正在卸载…") {
                             OutlinedButton(onClick = {}, enabled = false) { Text("卸载中…") }
+                        } else if (progress != null) {
+                            OutlinedButton(onClick = onCancel) { Text("取消安装") }
                         } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {
