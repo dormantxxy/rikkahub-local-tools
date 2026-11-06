@@ -68,3 +68,4 @@ RikkaHub 3.1.1 增强版
 - 工具链工作区详情页展示执行通道、已安装扩展数、工作目录
 - 无 root/Shizuku 时不允许创建工具链工作区
 - 未绑定工作区时，AI 默认操作目录改为 /storage/emulated/0/RikkaHub（已授予「所有文件访问」时；未授权自动回退 App 私有目录）
+- 左滑新增「文件」页：文件目录（/storage/emulated/0/RikkaHub）+ 运行环境（已装扩展目录）
