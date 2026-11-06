@@ -411,18 +411,6 @@ fun ChatDrawerContent(
 
                 DrawerAction(
                     icon = {
-                        Icon(HugeIcons.Folder01, "文件")
-                    },
-                    label = {
-                        Text("文件")
-                    },
-                    onClick = {
-                        navController.navigate(Screen.FilesBrowser)
-                    },
-                )
-
-                DrawerAction(
-                    icon = {
                         Icon(HugeIcons.InLove, stringResource(R.string.favorite_page_title))
                     },
                     label = {
