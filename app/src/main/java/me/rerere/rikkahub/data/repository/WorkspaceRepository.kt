@@ -63,6 +63,8 @@ class WorkspaceRepository(
                 }
                 continue
             }
+            // 工具链工作区不依赖 Rootfs，跳过检查
+            if (!workspace.capabilities().rootfs) continue
             val statusName = workspace.shellStatus
             if ((statusName == WorkspaceShellStatus.READY.name || statusName == WorkspaceShellStatus.INSTALLING.name) &&
                 !manager.hasRootfs(workspace.root)
@@ -75,7 +77,10 @@ class WorkspaceRepository(
 
     suspend fun getById(id: String): WorkspaceEntity? = dao.getById(id)
 
-    suspend fun create(name: String): WorkspaceEntity {
+    /** 工作区文件目录的宿主机绝对路径（工具链工作区作为 cwd 展示）。 */
+    fun workspaceFilesDir(id: String): String = manager.filesDir(id).absolutePath
+
+    suspend fun create(name: String, type: WorkspaceType = WorkspaceType.LOCAL): WorkspaceEntity {
         val id = Uuid.random().toString()
         val now = System.currentTimeMillis()
         val finalName = name.trim().ifBlank { "Workspace" }
@@ -86,9 +91,13 @@ class WorkspaceRepository(
             id = id,
             name = finalName,
             root = id,
+            // 工具链工作区不依赖 Rootfs，创建即就绪；本地工作区需要先装 Rootfs
+            shellStatus = if (type == WorkspaceType.TOOLCHAIN) WorkspaceShellStatus.READY.name
+            else WorkspaceShellStatus.DISABLED.name,
             createdAt = now,
             updatedAt = now,
             lastAccessAt = null,
+            type = type.name,
         )
         manager.ensureWorkspace(workspace.root)
         dao.upsert(workspace)
@@ -383,7 +392,7 @@ class WorkspaceRepository(
             val settings = workspace.sshSettings() ?: error("SSH workspace config is missing: ${workspace.id}")
             SshWorkspaceBackend(sshPool, workspace.id, settings.toConnectionConfig())
         } else {
-            manager.backend(workspace.root, workspace.shellCompatibilityMode)
+            manager.backend(workspace.root, workspace.shellCompatibilityMode, workspace.workspaceType())
         }
 
     private fun SshWorkspaceSettings.toConnectionConfig() = SshConnectionConfig(

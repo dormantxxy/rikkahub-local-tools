@@ -9,6 +9,7 @@ class LocalWorkspaceBackend(
     private val manager: WorkspaceManager,
     private val root: String,
     private val shellCompatibilityMode: Boolean = false,
+    private val type: WorkspaceType = WorkspaceType.LOCAL,
 ) : WorkspaceBackend {
     override val layout: WorkspaceLayout
         get() = manager.layout
@@ -107,6 +108,7 @@ class LocalWorkspaceBackend(
             timeoutMillis = timeoutMillis,
             stdin = stdin,
             shellCompatibilityMode = shellCompatibilityMode,
+            type = type,
         )
     }
 

@@ -12,7 +12,12 @@ class WorkspaceManager(
     private val config: WorkspaceConfig = WorkspaceConfig(),
     private val shellRunner: WorkspaceShellRunner = HostShellRunner(),
     private val bindMounts: List<WorkspaceBindMount> = emptyList(),
+    /** 工具链工作区（WorkspaceType.TOOLCHAIN）使用的执行器；为 null 时退回 [shellRunner]。 */
+    private val toolchainShellRunner: WorkspaceShellRunner? = null,
 ) {
+    /** 按工作区类型选择执行器。 */
+    private fun runnerFor(type: WorkspaceType): WorkspaceShellRunner =
+        if (type == WorkspaceType.TOOLCHAIN) toolchainShellRunner ?: shellRunner else shellRunner
     private val fileSystem = WorkspaceFileSystem(config)
 
     // 按 target 长度降序, 保证 /a/b 优先于 /a 匹配
@@ -28,8 +33,12 @@ class WorkspaceManager(
         baseDir.mkdirs()
     }
 
-    fun backend(root: String, shellCompatibilityMode: Boolean = false): WorkspaceBackend =
-        LocalWorkspaceBackend(this, root, shellCompatibilityMode)
+    fun backend(
+        root: String,
+        shellCompatibilityMode: Boolean = false,
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): WorkspaceBackend =
+        LocalWorkspaceBackend(this, root, shellCompatibilityMode, type)
 
     fun ensureWorkspace(root: String): File {
         val dir = workspaceDir(root)
@@ -208,13 +217,14 @@ class WorkspaceManager(
         timeoutMillis: Long = DEFAULT_COMMAND_TIMEOUT_MS,
         stdin: ByteArray? = null,
         shellCompatibilityMode: Boolean = false,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): WorkspaceCommandResult {
         require(command.isNotBlank()) { "Command is required" }
         val workingDir = fileSystem.resolve(filesDir(root), cwd)
         require(workingDir.exists()) { "Working directory does not exist: $cwd" }
         require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
 
-        return shellRunner.execute(
+        return runnerFor(type).execute(
             WorkspaceShellContext(
                 root = root,
                 command = command,
@@ -238,8 +248,12 @@ class WorkspaceManager(
         RootfsPatcher().patch(linuxDir(root), RootfsPatchOptions(nameservers = nameservers))
     }
 
-    fun terminalLaunch(root: String, shellCompatibilityMode: Boolean): WorkspaceTerminalLaunch? =
-        shellRunner.terminalLaunch(
+    fun terminalLaunch(
+        root: String,
+        shellCompatibilityMode: Boolean,
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): WorkspaceTerminalLaunch? =
+        runnerFor(type).terminalLaunch(
             WorkspaceTerminalContext(
                 filesDir = filesDir(root),
                 linuxDir = linuxDir(root),

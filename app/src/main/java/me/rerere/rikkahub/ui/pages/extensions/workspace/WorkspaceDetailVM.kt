@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
+import me.rerere.rikkahub.data.localtools.ExtensionInstaller
+import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
@@ -32,7 +34,20 @@ class WorkspaceDetailVM(
     private val id: String,
     private val repository: WorkspaceRepository,
     private val terminalSessionManager: WorkspaceTerminalSessionManager,
+    private val shellExecutor: ShellExecutor,
+    private val extensionInstaller: ExtensionInstaller,
 ) : ViewModel() {
+
+    /** 工具链工作区的执行通道与扩展数量（用于详情页展示）。 */
+    fun toolchainSummary(): ToolchainSummary = ToolchainSummary(
+        mode = when {
+            shellExecutor.isRootAvailable() -> "root"
+            shellExecutor.isShizukuGranted() -> "shizuku"
+            else -> "none"
+        },
+        extensionCount = extensionInstaller.installed.value.size,
+        filesDir = repository.workspaceFilesDir(id),
+    )
     private val _state = MutableStateFlow(WorkspaceDetailState())
     val state = _state.asStateFlow()
 
@@ -396,3 +411,11 @@ sealed interface WorkspaceTerminalEntry {
     data class Result(val result: WorkspaceCommandResult) : WorkspaceTerminalEntry
     data class Error(val message: String) : WorkspaceTerminalEntry
 }
+
+
+/** 工具链工作区概要信息。 */
+data class ToolchainSummary(
+    val mode: String,
+    val extensionCount: Int,
+    val filesDir: String,
+)

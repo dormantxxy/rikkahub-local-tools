@@ -37,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.CloudServer
+import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Delete01
 import me.rerere.hugeicons.stroke.FolderCode
 import me.rerere.hugeicons.stroke.PencilEdit01
@@ -51,6 +52,7 @@ import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.workspace.WorkspaceType
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.components.RikkaConfirmDialog
@@ -63,6 +65,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTypeSheet by rememberSaveable { mutableStateOf(false) }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
+    var createType by rememberSaveable { mutableStateOf(WorkspaceType.LOCAL) }
     var editTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
     var deleteTarget by remember { mutableStateOf<WorkspaceEntity?>(null) }
 
@@ -120,6 +123,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                 item(
                     onClick = {
                         showTypeSheet = false
+                        createType = WorkspaceType.LOCAL
                         showAddDialog = true
                     },
                     leadingContent = { CardGroupIcon(HugeIcons.FolderCode) },
@@ -135,6 +139,16 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                     supportingContent = { Text(stringResource(R.string.workspace_page_type_ssh_desc)) },
                     headlineContent = { Text(stringResource(R.string.workspace_page_type_ssh)) },
                 )
+                item(
+                    onClick = {
+                        showTypeSheet = false
+                        createType = WorkspaceType.TOOLCHAIN
+                        showAddDialog = true
+                    },
+                    leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
+                    supportingContent = { Text("使用已装扩展聚合的工具链环境执行命令，无需安装 Rootfs（需 root / Shizuku）") },
+                    headlineContent = { Text("工具链工作区") },
+                )
             }
         }
     }
@@ -146,7 +160,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
             existingNames = workspaces.map { it.name.trim() }.toSet(),
             onDismiss = { showAddDialog = false },
             onConfirm = { name ->
-                vm.create(name)
+                vm.create(name, createType)
                 showAddDialog = false
             },
         )
@@ -199,7 +213,13 @@ private fun WorkspaceItem(
                 .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CardGroupIcon(if (workspace.isSsh()) HugeIcons.CloudServer else HugeIcons.FolderCode)
+            CardGroupIcon(
+                when (workspace.workspaceType()) {
+                    WorkspaceType.SSH -> HugeIcons.CloudServer
+                    WorkspaceType.TOOLCHAIN -> HugeIcons.ComputerTerminal01
+                    WorkspaceType.LOCAL -> HugeIcons.FolderCode
+                }
+            )
             Column(
                 modifier = Modifier
                     .weight(1f)

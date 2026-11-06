@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.workspace.RootfsInstallProgress
+import me.rerere.workspace.WorkspaceType
 
 class WorkspaceVM(
     private val repository: WorkspaceRepository,
@@ -20,9 +21,9 @@ class WorkspaceVM(
     val workspaces = repository.listFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    fun create(name: String) {
+    fun create(name: String, type: WorkspaceType = WorkspaceType.LOCAL) {
         viewModelScope.launch {
-            runCatching { repository.create(name) }
+            runCatching { repository.create(name, type) }
         }
     }
 

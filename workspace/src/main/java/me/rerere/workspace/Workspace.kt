@@ -16,6 +16,12 @@ enum class WorkspaceType(val capabilities: WorkspaceCapabilities) {
 
     /** 通过 SSH 连接的远程机器 */
     SSH(WorkspaceCapabilities(rootfs = false, terminal = true, localFiles = false, fileWriteTools = false)),
+
+    /**
+     * 本机工具链环境（已安装扩展聚合的 PATH / LD_LIBRARY_PATH），不需要 rootfs。
+     * 命令由 root / Shizuku 通道执行；没有交互式终端。
+     */
+    TOOLCHAIN(WorkspaceCapabilities(rootfs = false, terminal = false, localFiles = true, fileWriteTools = true)),
 }
 
 /** 一种工作区能用哪些功能; 调用方按能力判断, 不直接比较类型 */

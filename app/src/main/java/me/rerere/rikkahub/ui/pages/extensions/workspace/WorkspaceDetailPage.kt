@@ -98,6 +98,7 @@ import me.rerere.hugeicons.stroke.CloudServer
 import me.rerere.hugeicons.stroke.FingerPrint
 import me.rerere.hugeicons.stroke.Folder01
 import me.rerere.hugeicons.stroke.FolderOpen
+import me.rerere.hugeicons.stroke.Package
 import me.rerere.hugeicons.stroke.PencilEdit01
 import me.rerere.hugeicons.stroke.Refresh01
 import me.rerere.hugeicons.stroke.Settings03
@@ -252,6 +253,9 @@ fun WorkspaceDetailPage(id: String) {
                 when (WorkspaceDetailTab.entries[page]) {
                     WorkspaceDetailTab.BASIC -> WorkspaceBasicPage(
                         workspace = state.workspace,
+                        toolchainSummary = state.workspace?.let { workspace ->
+                            if (workspace.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN) vm.toolchainSummary() else null
+                        },
                         installProgress = installProgress,
                         onInstallRootfs = { showInstallDialog = true },
                         onToolApprovalChange = vm::setToolApproval,
@@ -411,6 +415,7 @@ fun WorkspaceDetailPage(id: String) {
 @Composable
 private fun WorkspaceBasicPage(
     workspace: WorkspaceEntity?,
+    toolchainSummary: ToolchainSummary?,
     installProgress: RootfsInstallProgress?,
     onInstallRootfs: () -> Unit,
     onToolApprovalChange: (String, Boolean) -> Unit,
@@ -449,6 +454,34 @@ private fun WorkspaceBasicPage(
                         headlineContent = { Text(stringResource(R.string.workspace_detail_shell_status)) },
                         leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
                         trailingContent = { ShellStatusBadge(shellStatus) },
+                    )
+                }
+            }
+        }
+
+        if (toolchainSummary != null) {
+            item {
+                CardGroup(title = { Text("工具链工作区") }) {
+                    item(
+                        headlineContent = { Text("执行通道") },
+                        supportingContent = {
+                            Text(when (toolchainSummary.mode) {
+                                "root" -> "Root（工具链扩展直接执行）"
+                                "shizuku" -> "Shizuku（工具链扩展直接执行）"
+                                else -> "未获得 root / Shizuku，命令无法执行"
+                            })
+                        },
+                        leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
+                    )
+                    item(
+                        headlineContent = { Text("已安装扩展") },
+                        supportingContent = { Text("${toolchainSummary.extensionCount} 个，使用聚合后的 PATH 和库环境") },
+                        leadingContent = { CardGroupIcon(HugeIcons.Package) },
+                    )
+                    item(
+                        headlineContent = { Text("工作目录") },
+                        supportingContent = { Text(toolchainSummary.filesDir, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                        leadingContent = { CardGroupIcon(HugeIcons.FolderOpen) },
                     )
                 }
             }

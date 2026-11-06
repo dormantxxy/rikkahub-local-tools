@@ -103,6 +103,8 @@ val viewModelModule = module {
             id = it.get(),
             repository = get(),
             terminalSessionManager = get(),
+            shellExecutor = get(),
+            extensionInstaller = get(),
         )
     }
     viewModel<WorkspaceSshEditorVM> {

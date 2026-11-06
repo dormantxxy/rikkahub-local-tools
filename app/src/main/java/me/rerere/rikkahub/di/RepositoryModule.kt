@@ -2,6 +2,7 @@ package me.rerere.rikkahub.di
 
 import android.content.Context
 import me.rerere.rikkahub.data.files.FileFolders
+import me.rerere.rikkahub.data.localtools.ToolchainWorkspaceShellRunner
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.FavoriteRepository
@@ -62,6 +63,8 @@ val repositoryModule = module {
             shellRunner = ProotShellRunner(
                 nativeLibraryDir = File(context.applicationInfo.nativeLibraryDir),
             ),
+            // 工具链工作区：命令在聚合的扩展环境中执行（root/Shizuku 通道），不需要 Rootfs
+            toolchainShellRunner = ToolchainWorkspaceShellRunner(get()),
             // 同一份挂载表同时用于 PRoot 的 -b 参数 (命令执行与终端)、文件工具的路径解析和写入审批, 避免多处漂移
             bindMounts = listOf(
                 WorkspaceBindMount(

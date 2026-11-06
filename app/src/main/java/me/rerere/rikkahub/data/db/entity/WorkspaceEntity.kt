@@ -48,20 +48,22 @@ data class WorkspaceEntity(
 ) {
     fun isSsh(): Boolean = type == WorkspaceType.SSH.name
 
-    fun capabilities(): WorkspaceCapabilities =
-        runCatching { WorkspaceType.valueOf(type) }.getOrDefault(WorkspaceType.LOCAL).capabilities
+    fun workspaceType(): WorkspaceType =
+        runCatching { WorkspaceType.valueOf(type) }.getOrDefault(WorkspaceType.LOCAL)
+
+    fun capabilities(): WorkspaceCapabilities = workspaceType().capabilities
 
     fun sshSettings(): SshWorkspaceSettings? = sshConfig?.let { config ->
         runCatching { JsonInstant.decodeFromString<SshWorkspaceSettings>(config) }.getOrNull()
     }
 
     /** 工作区文件目录在执行环境内的绝对路径, 不需要连接即可得到, 供界面展示 */
-    fun workspaceDir(): String =
-        if (isSsh()) {
-            sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir).workspaceDir } ?: "/"
-        } else {
-            WorkspaceManager.ROOTFS_WORKSPACE_DIR
-        }
+    fun workspaceDir(): String = when (workspaceType()) {
+        WorkspaceType.SSH -> sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir).workspaceDir } ?: "/"
+        // 工具链工作区没有 rootfs 挂载点，直接暴露宿主机文件路径
+        WorkspaceType.TOOLCHAIN -> "/data/user/0/me.rerere.rikkahub/files/workspaces/$root/files"
+        WorkspaceType.LOCAL -> WorkspaceManager.ROOTFS_WORKSPACE_DIR
+    }
 
     fun supportsTerminal(): Boolean =
         capabilities().terminal && shellStatus != WorkspaceShellStatus.DISABLED.name
