@@ -25,15 +25,14 @@ class RootfsInstaller(
         manager.ensureWorkspace(root)
         val format = ArchiveFormat.fromUrl(url)
         val tempDir = manager.tempDir(root)
-        val archive = File(tempDir, "rootfs." + format.extension)
+        val archive = File(tempDir, "rootfs.${format.extension}")
         val stagingDir = File(tempDir, "rootfs-staging")
         val linuxDir = manager.linuxDir(root)
 
         try {
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
-            // 镜像站优先下载（国内 GitHub 代理）
-            downloadWithMirrors(url, archive, onProgress)
+            download(url, archive, onProgress)
             extractTar(archive, stagingDir, format, onProgress)
             linuxDir.deleteRecursively()
             require(stagingDir.renameTo(linuxDir)) {
@@ -45,29 +44,6 @@ class RootfsInstaller(
             archive.delete()
             stagingDir.deleteRecursively()
         }
-    }
-
-    /** 镜像站优先下载：按 MIRROR_PREFIXES 依次尝试，最后回退原始 URL。 */
-    private fun downloadWithMirrors(
-        url: String,
-        target: File,
-        onProgress: (RootfsInstallProgress) -> Unit,
-    ) {
-        val candidates = buildList {
-            MIRROR_PREFIXES.forEach { add(it + url) }
-            add(url)
-        }
-        var lastError: Throwable? = null
-        for (candidate in candidates) {
-            try {
-                download(candidate, target, onProgress)
-                return
-            } catch (e: Throwable) {
-                lastError = e
-                // 尝试下一个候选
-            }
-        }
-        throw lastError ?: IllegalStateException("Rootfs download failed: " + url)
     }
 
     private fun download(
@@ -438,12 +414,5 @@ class RootfsInstaller(
         private const val PROGRESS_STEP_BYTES = 512 * 1024
         private const val CONNECT_TIMEOUT_MS = 30_000
         private const val READ_TIMEOUT_MS = 60_000
-
-        /** 国内 GitHub 镜像代理，优先尝试。 */
-        private val MIRROR_PREFIXES = listOf(
-            "https://ghfast.top/",
-            "https://gh-proxy.com/",
-            "https://ghproxy.net/",
-        )
     }
 }
