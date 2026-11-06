@@ -815,8 +815,6 @@
   <string name="setting_page_preferences_network_auto_retry_desc">Modellanfragen bei Netzwerkfehlern bis zu 3-mal wiederholen.</string>
   <string name="setting_page_documentation">Dokumentation</string>
   <string name="setting_page_documentation_desc">Anweisungen zur App-Nutzung und Hilfedokumentation anzeigen</string>
-  <string name="setting_page_donate">Spenden</string>
-  <string name="setting_page_donate_desc">Wenn es dir gefällt, unterstütze die Arbeit des Autors</string>
   <string name="setting_page_dynamic_color">Dynamische Farben</string>
   <string name="setting_page_dynamic_color_desc">Erzeuge die Designfarben der App dynamisch aus deinem Hintergrundbild</string>
   <string name="setting_page_extensions">Erweiterungen</string>
@@ -876,10 +874,6 @@
   <string name="setting_page_share">Teilen</string>
   <string name="setting_page_share_desc">Teile diese App mit Freunden</string>
   <string name="setting_page_share_text">RikkaHub - Open Source Android AI Assistant\n\nWebsite: https://rikka-ai.com/</string>
-  <string name="setting_page_sponsor_alert_confirm">Spenden</string>
-  <string name="setting_page_sponsor_alert_desc">Du hast die App über 100 Mal gestartet! Wenn sie dir gefällt, erwäge bitte, den Entwickler zu unterstützen.</string>
-  <string name="setting_page_sponsor_alert_dismiss">Nicht jetzt</string>
-  <string name="setting_page_sponsor_alert_title">Entwickler unterstützen</string>
   <string name="setting_provider_page_avaliable_models">Verfügbare Modelle</string>
   <string name="setting_provider_page_balance_info">\"Kontostand abrufen \"</string>
   <string name="setting_provider_page_balance_json_key">JSON-Schlüssel des Ergebnisses</string>

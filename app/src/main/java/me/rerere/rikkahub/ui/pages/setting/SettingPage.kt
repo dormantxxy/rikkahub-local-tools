@@ -61,7 +61,6 @@ import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Image02
 import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.ImageUpload
-import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
 import me.rerere.hugeicons.stroke.Megaphone01
@@ -101,34 +100,7 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
-
-    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
-        AlertDialog(
-            onDismissRequest = {
-                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-            },
-            icon = { Icon(HugeIcons.WavingHand01, null) },
-            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
-            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
-            confirmButton = {
-                Button(onClick = {
-                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-                    navController.navigate(Screen.SettingDonate)
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
-                }) {
-                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
-                }
-            },
-        )
-    }
 
     Scaffold(
         topBar = {
@@ -210,10 +182,10 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.Extensions) },
+                        onClick = { navController.navigate(Screen.Toolchains) },
                         leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
+                        supportingContent = { Text("安装工具链扩展与运行时") },
+                        headlineContent = { Text("扩展商店") },
                     )
                 }
             }
@@ -402,12 +374,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.Bookshelf01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
-                    )
-                    item(
-                        onClick = { navController.navigate(Screen.SettingDonate) },
-                        leadingContent = { CardGroupIcon(HugeIcons.InLove, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
-                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {
