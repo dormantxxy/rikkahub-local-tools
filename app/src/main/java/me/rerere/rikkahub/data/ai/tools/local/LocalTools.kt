@@ -19,7 +19,28 @@ class LocalTools(
     private val extensionInstaller: ExtensionInstaller,
 ) {
     private val defaultDir = context.filesDir.absolutePath
-    private val rikkahubWorkDir = java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
+
+    /**
+     * 未绑定工作区时 AI 的默认工作目录：
+     * 已授予「所有文件访问」→ /storage/emulated/0/RikkaHub（用户可见可管理）；
+     * 否则回退到 App 私有 files/RikkaHub。
+     */
+    private val rikkahubWorkDir: String by lazy {
+        val publicDir = java.io.File("/storage/emulated/0/RikkaHub")
+        val canUsePublic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
+            runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
+        val dir = if (canUsePublic) publicDir else java.io.File(context.filesDir, "RikkaHub")
+        runCatching { dir.mkdirs() }
+        // 授权了但目录不可写时仍回退私有，避免 AI 工具全部失败
+        val writable = runCatching {
+            val probe = java.io.File(dir, ".probe_" + System.nanoTime())
+            probe.writeText("x")
+            probe.delete()
+            true
+        }.getOrDefault(false)
+        if (writable) dir.absolutePath
+        else java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
+    }
 
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
