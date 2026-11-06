@@ -39,10 +39,10 @@
 
 ### 本地工具（AI 工具）
 - `data/ai/tools/local/` — 工具实现
-  - 默认：get_time_info / list_file_tree / search_code / web_fetch / manage_files / run_shell_command / run_cli
+  - 默认：get_time_info / list_file_tree / search_code / web_fetch / manage_files / run_shell / run_cli
   - 增强：env_info / pkg_search / pkg_install（工具链）；tap / swipe / input_text / ui_dump / screenshot / logcat（需 root/Shizuku，无权限不暴露给 AI）
 - `AssistantLocalToolPage.kt` — 本地工具开关；列表最下面「设备 Shell 审批」开关（默认关闭）
-- `Assistant.deviceShellApproval` — 控制 run_shell_command 是否需要审批
+- `Assistant.deviceShellApproval` — 控制 run_shell 是否需要审批
 - search_code / list_file_tree / manage_files search 均为纯 Kotlin 实现（不能用系统 grep/find：Android toybox grep 在部分 ROM 上无输出）
 
 ### 聊天界面
@@ -57,7 +57,7 @@
 5. 版本号：`versionCode = 194 + RIKKAHUB_VERSION_BUMP(run_number)`，versionName=3.1.1。
 
 ## 五、本地工具修复记录
-1. ✅ **run_shell_command 自动分流**（已实施）：命令首词命中扩展 payload/bin → ToolchainExecutor 聚合环境执行；否则系统环境。
+1. ✅ **run_shell 自动分流**（已实施）：命令首词命中扩展 payload/bin → ToolchainExecutor 聚合环境执行；否则系统环境。
 2. ✅ **默认工作目录统一 files/RikkaHub/**（已实施）：runShellTool/manageFilesTool/searchCodeTool/fileTreeTool 全部 rikkahubWorkDir。
 3. AI 无确认可改系统设置：用户决定不改（不加危险名单/审批默认值不变）。
 4. ✅ **Magisk root 路径 nsenter**（已修复）：ShellExecutor.startRoot 的 su -c 命令加 nsenter -t 1 -m -- sh -c 前缀，实测 /data/data 325 目录可见。
