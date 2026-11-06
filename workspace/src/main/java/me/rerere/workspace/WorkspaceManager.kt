@@ -210,6 +210,7 @@ class WorkspaceManager(
         path: String,
         recursive: Boolean = false,
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): Boolean =
         fileSystem.delete(areaDir(root, area, type), path, recursive)
 
@@ -235,6 +236,7 @@ class WorkspaceManager(
         regex: Boolean = false,
         ignoreCase: Boolean = true,
         includeGlob: String? = null,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): List<WorkspaceSearchMatch> =
         fileSystem.grep(filesDir(root, type), query, path, regex, ignoreCase, includeGlob)
 
