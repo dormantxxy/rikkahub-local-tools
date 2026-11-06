@@ -52,8 +52,11 @@ class WorkspaceManager(
     fun ensureWorkspace(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
         val dir = workspaceDir(root, type)
         filesDir(root, type).mkdirs()
-        linuxDir(root, type).mkdirs()
-        tempDir(root, type).mkdirs()
+        // 工具链工作区没有 Rootfs，不创建 linux/ 和 tmp/
+        if (type != WorkspaceType.TOOLCHAIN) {
+            linuxDir(root, type).mkdirs()
+            tempDir(root, type).mkdirs()
+        }
         return dir
     }
 
