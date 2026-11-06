@@ -39,7 +39,7 @@ internal fun buildRunShellTool(
     toolchainExecutor: ToolchainExecutor? = null,
     installer: ExtensionInstaller? = null,
 ): Tool = Tool(
-    name = "run_shell_command",
+    name = "run_shell",
     description = "Execute a shell command on the Android device (root via su if available, else normal app permission). Params: command, cwd(optional), timeout_seconds(optional).",
     parameters = {
         InputSchema.Obj(

@@ -50,7 +50,7 @@ data class Assistant(
         LocalToolOption.Cli,
         LocalToolOption.AppManager,
     ),
-    /** 设备 Shell（run_shell_command）执行前是否需要用户审批，默认关闭。 */
+    /** 设备 Shell（run_shell）执行前是否需要用户审批，默认关闭。 */
     val deviceShellApproval: Boolean = false,
     val enableWebSearch: Boolean = false, // 网络搜索开关(每个助手独立)
     val workspaceId: Uuid? = null,
