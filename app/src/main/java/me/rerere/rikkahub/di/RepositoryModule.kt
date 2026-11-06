@@ -65,6 +65,8 @@ val repositoryModule = module {
             ),
             // 工具链工作区：命令在聚合的扩展环境中执行（root/Shizuku 通道），不需要 Rootfs
             toolchainShellRunner = ToolchainWorkspaceShellRunner(get()),
+            // 工具链工作区文件放外部公共目录（有 root/Shizuku 时可写），方便用户直接查看
+            toolchainBaseDir = File("/storage/emulated/0/RikkaHub/workspaces").apply { runCatching { mkdirs() } },
             // 同一份挂载表同时用于 PRoot 的 -b 参数 (命令执行与终端)、文件工具的路径解析和写入审批, 避免多处漂移
             bindMounts = listOf(
                 WorkspaceBindMount(

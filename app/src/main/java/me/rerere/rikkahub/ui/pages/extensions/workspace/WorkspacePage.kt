@@ -25,6 +25,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -34,6 +35,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.withContext
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.CloudServer
@@ -52,16 +54,20 @@ import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.ItemAction
 import me.rerere.rikkahub.ui.components.ui.ItemActionMenu
 import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.workspace.WorkspaceType
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.components.RikkaConfirmDialog
+import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
 
 @Composable
 fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val navController = LocalNavController.current
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
+    val toaster = LocalToaster.current
+    val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTypeSheet by rememberSaveable { mutableStateOf(false) }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
@@ -139,14 +145,27 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                     supportingContent = { Text(stringResource(R.string.workspace_page_type_ssh_desc)) },
                     headlineContent = { Text(stringResource(R.string.workspace_page_type_ssh)) },
                 )
+                val hasPrivilege by produceState(initialValue = true) {
+                    value = withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
+                }
                 item(
                     onClick = {
-                        showTypeSheet = false
-                        createType = WorkspaceType.TOOLCHAIN
-                        showAddDialog = true
+                        if (!hasPrivilege) {
+                            toaster.show(message = "需要 root 或 Shizuku 权限才能创建工具链工作区", type = ToastType.Warning)
+                        } else {
+                            showTypeSheet = false
+                            createType = WorkspaceType.TOOLCHAIN
+                            showAddDialog = true
+                        }
                     },
+                    enabled = hasPrivilege,
                     leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
-                    supportingContent = { Text("使用已装扩展聚合的工具链环境执行命令，无需安装 Rootfs（需 root / Shizuku）") },
+                    supportingContent = {
+                        Text(
+                            if (hasPrivilege) "使用已装扩展聚合的工具链环境执行命令，文件放在 /storage/emulated/0/RikkaHub/workspaces"
+                            else "需要 root 或 Shizuku 权限"
+                        )
+                    },
                     headlineContent = { Text("工具链工作区") },
                 )
             }

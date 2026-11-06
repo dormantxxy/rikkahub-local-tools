@@ -53,7 +53,7 @@ class WorkspaceRepository(
         for (workspace in workspaces) {
             // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
             if (!workspace.capabilities().localFiles) continue
-            val dir = manager.workspaceDir(workspace.root)
+            val dir = manager.workspaceDir(workspace.root, workspace.workspaceType())
             if (!dir.exists()) {
                 // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
                 // 仅标记为 BROKEN 以保留记录与助手绑定, 避免误删用户工作区
@@ -67,7 +67,7 @@ class WorkspaceRepository(
             if (!workspace.capabilities().rootfs) continue
             val statusName = workspace.shellStatus
             if ((statusName == WorkspaceShellStatus.READY.name || statusName == WorkspaceShellStatus.INSTALLING.name) &&
-                !manager.hasRootfs(workspace.root)
+                !manager.hasRootfs(workspace.root, workspace.workspaceType())
             ) {
                 Log.w(TAG, "Rootfs missing, resetting shell status: id=${workspace.id}")
                 updateShellState(workspace.id, WorkspaceShellStatus.DISABLED.name)
@@ -79,6 +79,10 @@ class WorkspaceRepository(
 
     /** 工作区文件目录的宿主机绝对路径（工具链工作区作为 cwd 展示）。 */
     fun workspaceFilesDir(id: String): String = manager.filesDir(id).absolutePath
+
+    /** 指定工作区类型下的文件目录（工具链工作区在公共目录）。 */
+    fun workspaceFilesDir(id: String, type: WorkspaceType): String =
+        manager.filesDir(id, type).absolutePath
 
     suspend fun create(name: String, type: WorkspaceType = WorkspaceType.LOCAL): WorkspaceEntity {
         val id = Uuid.random().toString()
@@ -99,7 +103,7 @@ class WorkspaceRepository(
             lastAccessAt = null,
             type = type.name,
         )
-        manager.ensureWorkspace(workspace.root)
+        manager.ensureWorkspace(workspace.root, type)
         dao.upsert(workspace)
         return workspace
     }
@@ -218,6 +222,12 @@ class WorkspaceRepository(
         // 只需要目录约定, 不解密凭据也不建立连接
         if (workspace.isSsh()) {
             workspace.sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir) }
+        } else if (workspace.workspaceType() == WorkspaceType.TOOLCHAIN) {
+            // 工具链工作区没有 rootfs 挂载点，直接使用宿主机绝对路径
+            WorkspaceLayout(
+                workspaceDir = workspace.workspaceDir(),
+                writableRoots = listOf(workspace.workspaceDir()),
+            )
         } else {
             manager.layout
         }
@@ -360,7 +370,7 @@ class WorkspaceRepository(
         dao.deleteById(id)
         withContext(Dispatchers.IO) {
             sshPool.close(id)
-            manager.deleteWorkspace(workspace.root)
+            manager.deleteWorkspace(workspace.root, workspace.workspaceType())
         }
         cleanupAssistantReferences(id)
         return true

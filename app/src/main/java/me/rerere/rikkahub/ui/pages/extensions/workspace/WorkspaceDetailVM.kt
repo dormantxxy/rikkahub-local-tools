@@ -46,7 +46,7 @@ class WorkspaceDetailVM(
             else -> "none"
         },
         extensionCount = extensionInstaller.installed.value.size,
-        filesDir = repository.workspaceFilesDir(id),
+        filesDir = repository.workspaceFilesDir(id, me.rerere.workspace.WorkspaceType.TOOLCHAIN),
     )
     private val _state = MutableStateFlow(WorkspaceDetailState())
     val state = _state.asStateFlow()

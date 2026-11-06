@@ -61,7 +61,7 @@ data class WorkspaceEntity(
     fun workspaceDir(): String = when (workspaceType()) {
         WorkspaceType.SSH -> sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir).workspaceDir } ?: "/"
         // 工具链工作区没有 rootfs 挂载点，直接暴露宿主机文件路径
-        WorkspaceType.TOOLCHAIN -> "/data/user/0/me.rerere.rikkahub/files/workspaces/$root/files"
+        WorkspaceType.TOOLCHAIN -> "/storage/emulated/0/RikkaHub/workspaces/$root/files"
         WorkspaceType.LOCAL -> WorkspaceManager.ROOTFS_WORKSPACE_DIR
     }
 

@@ -14,6 +14,11 @@ class WorkspaceManager(
     private val bindMounts: List<WorkspaceBindMount> = emptyList(),
     /** 工具链工作区（WorkspaceType.TOOLCHAIN）使用的执行器；为 null 时退回 [shellRunner]。 */
     private val toolchainShellRunner: WorkspaceShellRunner? = null,
+    /**
+     * 工具链工作区的公共根目录（如 /storage/emulated/0/RikkaHub/workspaces）。
+     * 为 null 或不可写时退回 [baseDir]。有 root/Shizuku 时用户文件放外部，方便查看。
+     */
+    private val toolchainBaseDir: File? = null,
 ) {
     /** 按工作区类型选择执行器。 */
     private fun runnerFor(type: WorkspaceType): WorkspaceShellRunner =
@@ -40,43 +45,52 @@ class WorkspaceManager(
     ): WorkspaceBackend =
         LocalWorkspaceBackend(this, root, shellCompatibilityMode, type)
 
-    fun ensureWorkspace(root: String): File {
-        val dir = workspaceDir(root)
-        filesDir(root).mkdirs()
-        linuxDir(root).mkdirs()
-        tempDir(root).mkdirs()
+    /** 某个工作区应该用的根目录：工具链工作区优先用公共目录。 */
+    private fun baseDirFor(type: WorkspaceType): File =
+        if (type == WorkspaceType.TOOLCHAIN && toolchainBaseDir != null) toolchainBaseDir else baseDir
+
+    fun ensureWorkspace(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
+        val dir = workspaceDir(root, type)
+        filesDir(root, type).mkdirs()
+        linuxDir(root, type).mkdirs()
+        tempDir(root, type).mkdirs()
         return dir
     }
 
-    fun workspaceDir(root: String): File {
+    fun workspaceDir(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
         requireValidRoot(root)
-        return File(baseDir, root)
+        return File(baseDirFor(type), root)
     }
 
-    fun filesDir(root: String): File = File(workspaceDir(root), FILES_DIR)
+    fun filesDir(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File =
+        File(workspaceDir(root, type), FILES_DIR)
 
-    fun linuxDir(root: String): File = File(workspaceDir(root), LINUX_DIR)
+    fun linuxDir(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File =
+        File(workspaceDir(root, type), LINUX_DIR)
 
-    fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
+    fun tempDir(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File =
+        File(workspaceDir(root, type), TEMP_DIR)
 
-    fun hasRootfs(root: String): Boolean = isUsableRootfs(linuxDir(root))
+    fun hasRootfs(root: String, type: WorkspaceType = WorkspaceType.LOCAL): Boolean = isUsableRootfs(linuxDir(root, type))
 
-    fun rootfsShell(root: String): String = rootfsShell(linuxDir(root))
+    fun rootfsShell(root: String, type: WorkspaceType = WorkspaceType.LOCAL): String = rootfsShell(linuxDir(root, type))
 
-    fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
+    fun deleteWorkspace(root: String, type: WorkspaceType = WorkspaceType.LOCAL): Boolean = workspaceDir(root, type).deleteRecursively()
 
     fun listFiles(
         root: String,
         path: String = "",
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): List<WorkspaceFileEntry> =
-        fileSystem.list(areaDir(root, area), path)
+        fileSystem.list(areaDir(root, area, type), path)
 
     fun readText(
         root: String,
         path: String,
         charset: Charset = StandardCharsets.UTF_8,
-    ): String = fileSystem.readText(filesDir(root), path, charset)
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): String = fileSystem.readText(filesDir(root, type), path, charset)
 
     fun writeText(
         root: String,
@@ -84,7 +98,8 @@ class WorkspaceManager(
         text: String,
         overwrite: Boolean = true,
         charset: Charset = StandardCharsets.UTF_8,
-    ): WorkspaceFileEntry = fileSystem.writeText(filesDir(root), path, text, overwrite, charset)
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): WorkspaceFileEntry = fileSystem.writeText(filesDir(root, type), path, text, overwrite, charset)
 
     fun importFile(
         root: String,
@@ -92,8 +107,9 @@ class WorkspaceManager(
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
         fileName: String,
         inputStream: InputStream,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): WorkspaceFileEntry {
-        val areaRoot = areaDir(root, area)
+        val areaRoot = areaDir(root, area, type)
         val targetPath = if (destinationPath.isBlank()) fileName else "$destinationPath/$fileName"
         return fileSystem.importBytes(areaRoot, targetPath, inputStream)
     }
@@ -102,8 +118,9 @@ class WorkspaceManager(
         root: String,
         path: String,
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): Long {
-        val file = fileSystem.resolve(areaDir(root, area), path)
+        val file = fileSystem.resolve(areaDir(root, area, type), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
         return file.length()
@@ -113,8 +130,9 @@ class WorkspaceManager(
         root: String,
         path: String,
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ): File {
-        val file = fileSystem.resolve(areaDir(root, area), path)
+        val file = fileSystem.resolve(areaDir(root, area, type), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
         return file
@@ -125,8 +143,9 @@ class WorkspaceManager(
         path: String,
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
         outputStream: OutputStream,
+        type: WorkspaceType = WorkspaceType.LOCAL,
     ) {
-        val file = fileSystem.resolve(areaDir(root, area), path)
+        val file = fileSystem.resolve(areaDir(root, area, type), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
         outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
@@ -139,7 +158,7 @@ class WorkspaceManager(
      * 可以直接用文件 IO 访问, 无需经过 PRoot; 只是 Rootfs 目录里对应位置是个空挂载点,
      * 按 [WorkspaceStorageArea.LINUX] 解析必然落空。
      */
-    fun resolveRootfsPath(root: String, path: String): RootfsLocation {
+    fun resolveRootfsPath(root: String, path: String, type: WorkspaceType = WorkspaceType.LOCAL): RootfsLocation {
         val trimmed = path.trim().trimEnd('/').ifBlank { "/" }
         require(trimmed.startsWith("/")) { "Rootfs path must be absolute: $path" }
 
@@ -153,7 +172,7 @@ class WorkspaceManager(
 
         if (trimmed == ROOTFS_WORKSPACE_DIR || trimmed.startsWith("$ROOTFS_WORKSPACE_DIR/")) {
             return RootfsLocation(
-                rootDir = filesDir(root),
+                rootDir = filesDir(root, type),
                 relativePath = trimmed.removePrefix(ROOTFS_WORKSPACE_DIR).trimStart('/'),
             )
         }
@@ -163,21 +182,21 @@ class WorkspaceManager(
             error("$it is a kernel filesystem and cannot be read as a file, use workspace_shell instead")
         }
 
-        return RootfsLocation(linuxDir(root), trimmed.trimStart('/'))
+        return RootfsLocation(linuxDir(root, type), trimmed.trimStart('/'))
     }
 
-    fun rootfsFileSize(root: String, path: String): Long =
+    fun rootfsFileSize(root: String, path: String, type: WorkspaceType = WorkspaceType.LOCAL): Long =
         resolveRootfsFile(root, path).also { it.requireReadableFile(path) }.length()
 
-    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream) {
+    fun exportRootfsFile(root: String, path: String, outputStream: OutputStream, type: WorkspaceType = WorkspaceType.LOCAL) {
         val file = resolveRootfsFile(root, path)
         file.requireReadableFile(path)
         outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
     }
 
     /** Rootfs 内绝对路径对应的宿主机文件, 不检查是否存在 */
-    fun resolveRootfsFile(root: String, path: String): File {
-        val location = resolveRootfsPath(root, path)
+    fun resolveRootfsFile(root: String, path: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
+        val location = resolveRootfsPath(root, path, type)
         return fileSystem.resolve(location.rootDir, location.relativePath)
     }
 
@@ -192,13 +211,22 @@ class WorkspaceManager(
         recursive: Boolean = false,
         area: WorkspaceStorageArea = WorkspaceStorageArea.FILES,
     ): Boolean =
-        fileSystem.delete(areaDir(root, area), path, recursive)
+        fileSystem.delete(areaDir(root, area, type), path, recursive)
 
-    fun moveFile(root: String, source: String, target: String, overwrite: Boolean = false): WorkspaceFileEntry =
-        fileSystem.move(filesDir(root), source, target, overwrite)
+    fun moveFile(
+        root: String,
+        source: String,
+        target: String,
+        overwrite: Boolean = false,
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): WorkspaceFileEntry = fileSystem.move(filesDir(root, type), source, target, overwrite)
 
-    fun glob(root: String, pattern: String, path: String = ""): List<WorkspaceFileEntry> =
-        fileSystem.glob(filesDir(root), pattern, path)
+    fun glob(
+        root: String,
+        pattern: String,
+        path: String = "",
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): List<WorkspaceFileEntry> = fileSystem.glob(filesDir(root, type), pattern, path)
 
     fun grep(
         root: String,
@@ -208,7 +236,7 @@ class WorkspaceManager(
         ignoreCase: Boolean = true,
         includeGlob: String? = null,
     ): List<WorkspaceSearchMatch> =
-        fileSystem.grep(filesDir(root), query, path, regex, ignoreCase, includeGlob)
+        fileSystem.grep(filesDir(root, type), query, path, regex, ignoreCase, includeGlob)
 
     fun executeCommand(
         root: String,
@@ -220,7 +248,7 @@ class WorkspaceManager(
         type: WorkspaceType = WorkspaceType.LOCAL,
     ): WorkspaceCommandResult {
         require(command.isNotBlank()) { "Command is required" }
-        val workingDir = fileSystem.resolve(filesDir(root), cwd)
+        val workingDir = fileSystem.resolve(filesDir(root, type), cwd)
         require(workingDir.exists()) { "Working directory does not exist: $cwd" }
         require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
 
@@ -229,9 +257,9 @@ class WorkspaceManager(
                 root = root,
                 command = command,
                 cwd = cwd,
-                filesDir = filesDir(root),
-                linuxDir = linuxDir(root),
-                tempDir = tempDir(root),
+                filesDir = filesDir(root, type),
+                linuxDir = linuxDir(root, type),
+                tempDir = tempDir(root, type),
                 workingDir = workingDir,
                 timeoutMillis = timeoutMillis,
                 stdin = stdin,
@@ -242,10 +270,10 @@ class WorkspaceManager(
     }
 
     /** 交互式终端启动前的准备: 补齐目录, 并按当前网络刷新 Rootfs 的 DNS 等配置 */
-    fun prepareTerminal(root: String, nameservers: List<String>) {
-        ensureWorkspace(root)
+    fun prepareTerminal(root: String, nameservers: List<String>, type: WorkspaceType = WorkspaceType.LOCAL) {
+        ensureWorkspace(root, type)
         bindMounts.forEach { it.source.mkdirs() }
-        RootfsPatcher().patch(linuxDir(root), RootfsPatchOptions(nameservers = nameservers))
+        RootfsPatcher().patch(linuxDir(root, type), RootfsPatchOptions(nameservers = nameservers))
     }
 
     fun terminalLaunch(
@@ -255,9 +283,9 @@ class WorkspaceManager(
     ): WorkspaceTerminalLaunch? =
         runnerFor(type).terminalLaunch(
             WorkspaceTerminalContext(
-                filesDir = filesDir(root),
-                linuxDir = linuxDir(root),
-                tempDir = tempDir(root),
+                filesDir = filesDir(root, type),
+                linuxDir = linuxDir(root, type),
+                tempDir = tempDir(root, type),
                 bindMounts = bindMounts,
                 shellCompatibilityMode = shellCompatibilityMode,
             )
@@ -269,21 +297,29 @@ class WorkspaceManager(
         }
     }
 
-    private fun areaDir(root: String, area: WorkspaceStorageArea): File = when (area) {
-        WorkspaceStorageArea.FILES -> filesDir(root)
-        WorkspaceStorageArea.LINUX -> linuxDir(root)
+    private fun areaDir(
+        root: String,
+        area: WorkspaceStorageArea,
+        type: WorkspaceType = WorkspaceType.LOCAL,
+    ): File = when (area) {
+        WorkspaceStorageArea.FILES -> filesDir(root, type)
+        WorkspaceStorageArea.LINUX -> linuxDir(root, type)
     }
 
     fun cleanupAllTempDirs() {
-        val roots = baseDir.listFiles()?.filter { it.isDirectory } ?: return
-        for (dir in roots) {
-            val root = dir.name
-            if (!root.matches(ROOT_NAME_REGEX)) continue
-            // PRoot temp files
-            tempDir(root).let { if (it.exists()) it.deleteRecursively() }
-            // Rootfs /tmp and /var/tmp
-            File(linuxDir(root), "tmp").let { if (it.exists()) it.deleteRecursively() }
-            File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+        val dirs = listOfNotNull(
+            baseDir to WorkspaceType.LOCAL,
+            toolchainBaseDir?.takeIf { it.exists() }?.let { it to WorkspaceType.TOOLCHAIN },
+        )
+        for ((base, type) in dirs) {
+            val roots = base.listFiles()?.filter { it.isDirectory } ?: continue
+            for (dir in roots) {
+                val root = dir.name
+                if (!root.matches(ROOT_NAME_REGEX)) continue
+                tempDir(root, type).let { if (it.exists()) it.deleteRecursively() }
+                File(linuxDir(root, type), "tmp").let { if (it.exists()) it.deleteRecursively() }
+                File(linuxDir(root, type), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+            }
         }
     }
 
