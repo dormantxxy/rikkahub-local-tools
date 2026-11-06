@@ -22,11 +22,11 @@ class LocalTools(
 
     /**
      * 未绑定工作区时 AI 的默认工作目录：
-     * 已授予「所有文件访问」→ /storage/emulated/0/RikkaHub（用户可见可管理）；
+     * 已授予「所有文件访问」→ /storage/emulated/0/RikkaHub/tmp（AI 临时区，用户可见可清理）；
      * 否则回退到 App 私有 files/RikkaHub。
      */
     private val rikkahubWorkDir: String by lazy {
-        val publicDir = java.io.File("/storage/emulated/0/RikkaHub")
+        val publicDir = java.io.File("/storage/emulated/0/RikkaHub/tmp")
         val canUsePublic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
             runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
         val dir = if (canUsePublic) publicDir else java.io.File(context.filesDir, "RikkaHub")
