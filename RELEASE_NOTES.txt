@@ -81,3 +81,6 @@ RikkaHub 3.1.1 增强版
 
 最新版本更新：
 - 工具链工作区不再创建多余的 linux/ 和 tmp/ 目录（只保留 files/）
+
+最新版本更新：
+- 修复工具链里 node 等 Termux 二进制 CANNOT LINK（Termux libc++ 优先，避免被 ripgrep 等自带旧版覆盖）

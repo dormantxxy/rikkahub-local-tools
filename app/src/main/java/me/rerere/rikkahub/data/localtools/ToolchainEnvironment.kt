@@ -82,9 +82,15 @@ object ToolchainEnvironment {
             if (hasUsableTermuxGit && rec.id == "mobicode.tool.git") emptyList()
             else rec.envVars["PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
         }.distinct()
-        val libDirs = records.flatMap { rec ->
-            rec.envVars["LD_LIBRARY_PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
-        }.distinct()
+        // Termux 的 libc++ 必须排在最前：其它扩展（如 ripgrep）自带旧版 libc++_shared.so，
+        // 排在前面会导致 node 等 Termux 二进制找不到符号（_ZNSt6__ndk113__hash_memoryEPKvm）。
+        val termuxLibcDirs = records
+            .filter { it.id.startsWith("termux.libc") }
+            .flatMap { rec -> rec.envVars["LD_LIBRARY_PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList() }
+        val otherLibDirs = records
+            .filterNot { it.id.startsWith("termux.libc") }
+            .flatMap { rec -> rec.envVars["LD_LIBRARY_PATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList() }
+        val libDirs = (termuxLibcDirs + otherLibDirs).distinct()
         val includeDirs = records.flatMap { rec ->
             rec.envVars["CPATH"]?.split(":")?.filter { it.isNotBlank() } ?: emptyList()
         }.distinct()
