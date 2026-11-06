@@ -68,6 +68,10 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val workspaces by vm.workspaces.collectAsStateWithLifecycle()
     val toaster = LocalToaster.current
     val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
+    // 是否有 root/Shizuku（工具链工作区依赖它）
+    val hasPrivilege by produceState(initialValue = true) {
+        value = withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
+    }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     var showTypeSheet by rememberSaveable { mutableStateOf(false) }
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
@@ -145,9 +149,6 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                     supportingContent = { Text(stringResource(R.string.workspace_page_type_ssh_desc)) },
                     headlineContent = { Text(stringResource(R.string.workspace_page_type_ssh)) },
                 )
-                val hasPrivilege by produceState(initialValue = true) {
-                    value = withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
-                }
                 item(
                     onClick = {
                         if (!hasPrivilege) {
