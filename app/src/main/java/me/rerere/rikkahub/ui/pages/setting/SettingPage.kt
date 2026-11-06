@@ -182,10 +182,10 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         headlineContent = { Text(stringResource(R.string.setting_page_assistant)) },
                     )
                     item(
-                        onClick = { navController.navigate(Screen.Toolchains) },
+                        onClick = { navController.navigate(Screen.Extensions) },
                         leadingContent = { CardGroupIcon(HugeIcons.Package, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = { Text("安装工具链扩展与运行时") },
-                        headlineContent = { Text("扩展商店") },
+                        supportingContent = { Text(stringResource(R.string.setting_page_extensions_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_extensions)) },
                     )
                 }
             }

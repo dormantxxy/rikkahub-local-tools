@@ -85,8 +85,8 @@ fun ExtensionsPage() {
                     item(
                         onClick = { navController.navigate(Screen.Toolchains) },
                         leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01, containerColor = containerColor, contentColor = contentColor) },
-                        headlineContent = { Text("工具链扩展") },
-                        supportingContent = { Text("在线安装 git/python3/node/gcc/apktool/java 等原生工具链") },
+                        headlineContent = { Text("扩展商店") },
+                        supportingContent = { Text("安装扩展与运行时") },
                     )
                 }
             }
