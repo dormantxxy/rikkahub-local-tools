@@ -87,3 +87,10 @@ RikkaHub 3.1.1 增强版
 
 最新版本更新：
 - 修复工具链 node/npm CANNOT LINK（Termux libc++ 优先，避免被自带旧版的扩展覆盖）
+
+最新版本更新：
+- 设备 Shell 工具名精简为 run_shell
+- 扩展管理页内「工具链扩展」更名为「扩展商店」
+- 完全移除赞助入口与赞助页面
+- 修复工具链 node/npm CANNOT LINK（Termux libc++ 优先）
+- 工具链工作区只创建 files 目录；文件页第二区域为「运行环境」
