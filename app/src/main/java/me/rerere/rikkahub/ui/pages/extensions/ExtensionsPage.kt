@@ -86,7 +86,7 @@ fun ExtensionsPage() {
                         onClick = { navController.navigate(Screen.Toolchains) },
                         leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01, containerColor = containerColor, contentColor = contentColor) },
                         headlineContent = { Text("扩展商店") },
-                        supportingContent = { Text("安装扩展与运行时") },
+                        supportingContent = { Text("安装扩展与运行环境") },
                     )
                 }
             }
