@@ -782,6 +782,7 @@ private fun WorkspaceFilesPage(
                     WorkspaceAreaSelector(
                         selected = state.area,
                         hasRootfs = state.workspace?.capabilities()?.rootfs ?: true,
+                        isToolchain = state.workspace?.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN,
                         onSelected = onSelectArea,
                     )
                     WorkspacePathBar(
@@ -897,6 +898,7 @@ private fun WorkspaceFilesPage(
 private fun WorkspaceAreaSelector(
     selected: WorkspaceStorageArea,
     hasRootfs: Boolean,
+    isToolchain: Boolean,
     onSelected: (WorkspaceStorageArea) -> Unit,
 ) {
     ConnectedChoiceButtons(
@@ -913,7 +915,7 @@ private fun WorkspaceAreaSelector(
                     if (hasRootfs) R.string.workspace_detail_area_files else R.string.workspace_detail_area_working_dir
                 )
 
-                WorkspaceStorageArea.LINUX -> stringResource(
+                WorkspaceStorageArea.LINUX -> if (isToolchain) "运行环境" else stringResource(
                     if (hasRootfs) R.string.workspace_detail_area_rootfs else R.string.workspace_detail_area_root
                 )
             },

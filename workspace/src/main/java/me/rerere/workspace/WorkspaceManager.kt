@@ -305,8 +305,11 @@ class WorkspaceManager(
         type: WorkspaceType = WorkspaceType.LOCAL,
     ): File = when (area) {
         WorkspaceStorageArea.FILES -> filesDir(root, type)
-        WorkspaceStorageArea.LINUX -> linuxDir(root, type)
+        // 工具链工作区没有 Rootfs，第二个区域固定指向扩展安装目录（运行环境）
+        WorkspaceStorageArea.LINUX ->
+            if (type == WorkspaceType.TOOLCHAIN) TOOLCHAIN_ROOT_DIR else linuxDir(root, type)
     }
+
 
     fun cleanupAllTempDirs() {
         val dirs = listOfNotNull(
@@ -326,6 +329,10 @@ class WorkspaceManager(
     }
 
     companion object {
+        /** 扩展安装目录（工具链运行环境）。 */
+        val TOOLCHAIN_ROOT_DIR: File
+            get() = File("/data/user/0/me.rerere.rikkahub/files/extensions")
+
         private const val FILES_DIR = "files"
         private const val LINUX_DIR = "linux"
         private const val TEMP_DIR = "tmp"
