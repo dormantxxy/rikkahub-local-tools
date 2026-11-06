@@ -531,11 +531,14 @@ private fun WorkspaceBasicPage(
             }
         }
 
-        item {
-            WorkspaceToolApprovalCard(
-                workspace = workspace,
-                onToolApprovalChange = onToolApprovalChange,
-            )
+        // 工具链工作区的命令由「设备命令审批」统一管理，这里不重复展示审批卡
+        if (toolchainSummary == null) {
+            item {
+                WorkspaceToolApprovalCard(
+                    workspace = workspace,
+                    onToolApprovalChange = onToolApprovalChange,
+                )
+            }
         }
     }
 }

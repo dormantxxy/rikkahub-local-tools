@@ -22,6 +22,17 @@ import java.io.File
 import kotlin.uuid.Uuid
 
 private const val TAG = "ChatToolFactory"
+
+/** 直接操作宿主机的本地工具：绑定普通 Rootfs 工作区时全部不暴露。 */
+private val DEVICE_LEVEL_LOCAL_TOOLS = setOf(
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Shell,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Cli,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Toolchain,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.UiAutomation,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Screenshot,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Logcat,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.AppManager,
+)
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
 
@@ -52,6 +63,15 @@ class ChatToolFactory(
         workspaceCwd: String? = null,
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
+        // 绑定普通 Rootfs 工作区时，禁止把直接接触宿主机的本地工具暴露给 AI：
+        // 命令与文件操作必须走 workspace_* 工具，保持工作区隔离。
+        val boundWorkspace = assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }
+        val boundLocalRootfs = boundWorkspace?.capabilities()?.rootfs == true
+        val effectiveLocalTools = if (boundLocalRootfs) {
+            assistant.localTools.filterNot { it in DEVICE_LEVEL_LOCAL_TOOLS }
+        } else {
+            assistant.localTools
+        }
         val tools = buildList {
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
@@ -59,7 +79,7 @@ class ChatToolFactory(
             if (shouldUseExternalWebSearch(assistant, model)) {
                 addAll(createSearchTools(settings))
             }
-            addAll(localTools.getTools(assistant.localTools, deviceShellApproval = assistant.deviceShellApproval))
+            addAll(localTools.getTools(effectiveLocalTools, deviceShellApproval = assistant.deviceShellApproval))
             if (assistant.enableRecentChatsReference) {
                 addAll(createConversationTools(conversationRepository, assistant.id))
             }
