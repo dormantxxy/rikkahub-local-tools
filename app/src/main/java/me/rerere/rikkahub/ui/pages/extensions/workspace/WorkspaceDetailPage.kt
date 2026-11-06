@@ -609,16 +609,18 @@ private fun WorkspaceToolApprovalCard(
 ) {
     val overrides = workspace?.toolApprovalOverrides().orEmpty()
     val fileWriteTools = workspace?.capabilities()?.fileWriteTools ?: true
-    val tools = workspaceToolApprovalItems().filter { (toolName) ->
-        fileWriteTools || toolName !in WorkspaceFileWriteToolNames
-    }
+    val isToolchain = workspace?.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN
+    val tools = (if (isToolchain) toolchainToolApprovalItems() else workspaceToolApprovalItems())
+        .filter { (toolName) ->
+            fileWriteTools || toolName !in WorkspaceFileWriteToolNames
+        }
 
     CardGroup(
         title = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(stringResource(R.string.workspace_detail_tool_approval))
                 Text(
-                    text = stringResource(R.string.workspace_detail_tool_approval_desc),
+                    text = if (isToolchain) "执行设备命令或修改文件前是否需要确认" else stringResource(R.string.workspace_detail_tool_approval_desc),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -643,6 +645,14 @@ private fun WorkspaceToolApprovalCard(
         }
     }
 }
+
+/** 工具链工作区的审批项：命令、写入、修改（读取不拦）。 */
+@Composable
+private fun toolchainToolApprovalItems() = listOf(
+    Triple("workspace_shell", "执行命令", HugeIcons.ComputerTerminal01),
+    Triple("workspace_write_file", "写入文件", HugeIcons.FileEdit),
+    Triple("workspace_edit_file", "修改文件", HugeIcons.PencilEdit01),
+)
 
 @Composable
 private fun workspaceToolApprovalItems() = listOf(
