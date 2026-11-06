@@ -159,7 +159,6 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
                             showAddDialog = true
                         }
                     },
-                    enabled = hasPrivilege,
                     leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
                     supportingContent = {
                         Text(

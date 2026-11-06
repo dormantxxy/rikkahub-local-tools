@@ -189,38 +189,27 @@ internal fun parseOsReleaseName(content: String): String? {
     return name.filterNot { it.isISOControl() }.trim().take(MAX_DISTRO_NAME_LENGTH).ifBlank { null }
 }
 
-/**
- * 工具链工作区提示词：命令在宿主机（Android）的聚合扩展环境中执行，没有 PRoot 与 /workspace 挂载。
- */
+/** 工具链工作区提示词：命令在宿主机（Android）的聚合扩展环境中执行，没有 PRoot 与 /workspace 挂载。 */
 private fun buildToolchainWorkspacePrompt(
     workspace: WorkspaceEntity,
     layout: WorkspaceLayout,
     cwd: String? = null,
 ): String = buildString {
     appendLine("<workspace>")
-    appendLine(
-        "You have access to a workspace named \"${workspace.name}\" on the Android host itself, not inside a proot rootfs."
-    )
-    appendLine(
-        "- The workspace files directory on the host is \"${layout.workspaceDir}\". Use absolute host paths for all workspace tools."
-    )
-    appendLine(
-        "- workspace_shell runs commands through the app's aggregated toolchain environment (installed extensions: node, python, git, rg, etc.) with root/Shizuku privileges."
-    )
+    appendLine("You have access to a workspace named \"" + workspace.name + "\" on the Android host itself, not inside a proot rootfs.")
+    appendLine("- The workspace files directory on the host is \"" + layout.workspaceDir + "\". Use absolute host paths for all workspace tools.")
+    appendLine("- workspace_shell runs commands through the app aggregated toolchain environment (installed extensions: node, python, git, rg) with root or Shizuku privileges.")
     appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount in this workspace type.")
     appendLine("- Available tools:")
-    appendLine("  - \`workspace_read_file\`: read file contents.")
-    appendLine("  - \`workspace_write_file\` / \`workspace_edit_file\`: create files or make precise edits.")
-    appendLine("  - \`workspace_shell\`: run shell commands (aggregated extension PATH).")
-    appendLine(
-        "- Prefer \`workspace_edit_file\` for targeted edits over rewriting whole files."
-    )
+    appendLine("  - workspace_read_file: read file contents.")
+    appendLine("  - workspace_write_file / workspace_edit_file: create files or make precise edits.")
+    appendLine("  - workspace_shell: run shell commands using the aggregated extension PATH.")
+    appendLine("- Prefer workspace_edit_file for targeted edits over rewriting whole files.")
     if (!cwd.isNullOrBlank()) {
-        appendLine("- Current working directory: \`$cwd\`.")
+        appendLine("- Current working directory: " + cwd + ".")
     }
     append("</workspace>")
 }
-
 private fun buildWorkspacePrompt(
     workspace: WorkspaceEntity,
     shell: String,
