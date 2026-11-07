@@ -26,6 +26,7 @@ android {
         targetSdk = 37
         // 版本号 = 194 + run_number（workflow 传 RIKKAHUB_VERSION_BUMP）
         versionCode = 194 + (System.getenv("RIKKAHUB_VERSION_BUMP")?.toIntOrNull() ?: 0)
+        versionName = "3.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
