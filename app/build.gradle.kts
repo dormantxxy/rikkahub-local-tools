@@ -24,16 +24,11 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        // 版本号 = 194 + 提交数偏移。用 git 提交数而非 run_number：构建失败不占号，号码只随提交增长。
-        versionCode = 194 + (runCatching {
-            val p = ProcessBuilder("git", "rev-list", "--count", "HEAD")
-            p.directory(rootProject.projectDir)
-            p.redirectErrorStream(true)
-            val proc = p.start()
-            val out = proc.inputStream.bufferedReader().readText().trim()
-            proc.waitFor()
-            out.toIntOrNull() ?: 0
-        }.getOrDefault(0) - 74).coerceAtLeast(1)
+        // 版本号 = 194 + (提交数 - 74)。用 providers.exec 兼容配置缓存；构建失败不占号。
+        versionCode = 194 + (providers.exec {
+            commandLine("git", "rev-list", "--count", "HEAD")
+            workingDir = rootProject.projectDir
+        }.standardOutput.asText.get().trim().toIntOrNull()?.minus(74) ?: 0).coerceAtLeast(1)
         versionName = "3.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
