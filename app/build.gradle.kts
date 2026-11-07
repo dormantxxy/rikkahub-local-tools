@@ -33,7 +33,7 @@ android {
             val out = proc.inputStream.bufferedReader().readText().trim()
             proc.waitFor()
             out.toIntOrNull() ?: 0
-        }.getOrDefault(0) - 74).coerceAtLeast(194)
+        }.getOrDefault(0) - 74).coerceAtLeast(1)
         versionName = "3.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

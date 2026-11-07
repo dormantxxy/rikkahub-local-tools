@@ -61,7 +61,7 @@ suspend fun createWorkspaceTools(
             add(createEditFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
         }
         if (workspace.workspaceType() != WorkspaceType.TOOLCHAIN) {
-            add(createShellTool(workspaceId, workspace, layout, ::needsApproval, workspaceRepository, shellCwd))
+            add(createShellTool(workspace, workspaceId, layout, ::needsApproval, workspaceRepository, shellCwd))
         }
     }
 }
