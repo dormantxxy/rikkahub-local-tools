@@ -113,6 +113,7 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
 
             items(workspaces, key = { it.id }) { workspace ->
                 WorkspaceItem(
+                    privilegeAvailable = hasPrivilege,
                     workspace = workspace,
                     onRename = { editTarget = workspace },
                     onDelete = { deleteTarget = workspace },
@@ -219,6 +220,7 @@ private fun WorkspaceItem(
     onRename: () -> Unit,
     onDelete: () -> Unit,
     onOpen: () -> Unit,
+    privilegeAvailable: Boolean = true,
 ) {
     Surface(
         onClick = onOpen,
@@ -252,7 +254,7 @@ private fun WorkspaceItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = workspace.statusLabel(privilegeAvailable = hasPrivilege),
+                    text = workspace.statusLabel(privilegeAvailable = privilegeAvailable),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
