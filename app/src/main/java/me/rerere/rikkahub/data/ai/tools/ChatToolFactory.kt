@@ -64,8 +64,6 @@ class ChatToolFactory(
         workspaceCwd: String? = null,
     ): List<Tool> {
         val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
-        // 绑定普通 Rootfs 工作区时，禁止把直接接触宿主机的本地工具暴露给 AI：
-        // 命令与文件操作必须走 workspace_* 工具，保持工作区隔离。
         val boundWorkspace = assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }
         // 工具链工作区：设备级工具（run_shell/run_cli/工具链增强）就是它的工作方式，不过滤
         // Rootfs / SSH 工作区：设备级工具一律不暴露，命令统一走工作区专属 shell（rootfs_shell / remote_shell）
