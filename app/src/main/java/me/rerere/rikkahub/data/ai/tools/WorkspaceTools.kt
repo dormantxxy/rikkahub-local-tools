@@ -12,8 +12,10 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.toMetadata
 import me.rerere.rikkahub.data.files.FilesManager
+import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.generateUnifiedDiff
+import me.rerere.workspace.WorkspaceType
 import me.rerere.workspace.WorkspaceCapabilities
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceLayout
@@ -56,7 +58,9 @@ suspend fun createWorkspaceTools(
             add(createWriteFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
             add(createEditFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
         }
-        add(createShellTool(workspaceId, layout, ::needsApproval, workspaceRepository, shellCwd))
+        if (workspace.workspaceType() != WorkspaceType.TOOLCHAIN) {
+            add(createShellTool(workspaceId, workspace, layout, ::needsApproval, workspaceRepository, shellCwd))
+        }
     }
 }
 
@@ -212,17 +216,24 @@ private fun createEditFileTool(
 )
 
 private fun createShellTool(
+    workspace: WorkspaceEntity,
     workspaceId: String,
     layout: WorkspaceLayout,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
     defaultCwd: String? = null,
 ) = Tool(
-    name = "workspace_shell",
+    name = when (workspace.workspaceType()) {
+        WorkspaceType.LOCAL -> "rootfs_shell"
+        WorkspaceType.SSH -> "remote_shell"
+        else -> "rootfs_shell"
+    },
     description = buildString {
-        append(
-            "Run a shell command in the assistant's bound workspace Rootfs. The workspace files area is mounted at ${layout.workspaceDir}. "
-        )
+        when (workspace.workspaceType()) {
+            WorkspaceType.LOCAL -> append("Run a shell command inside the bound PRoot rootfs. The workspace files area is mounted at ${layout.workspaceDir}. ")
+            WorkspaceType.SSH -> append("Run a shell command on the remote SSH machine. The workspace files directory is at ${layout.workspaceDir}. ")
+            else -> append("Run a shell command in the workspace. ")
+        }
         append("Use cwd for a path relative to the workspace files root. ")
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
