@@ -1,25 +1,43 @@
-RikkaHub 3.1.1 增强版（本地工具版）
+RikkaHub 3.1.1 本地工具版
 
-本次更新：
+基于官方 3.1.1 定制。相对官方版的差异如下。
+
+【新增：本地工具】
+- 设备命令：run_shell（root/Shizuku 执行，命令首词命中已装扩展时自动切工具链环境）
+- 原生工具链：run_cli（聚合所有已装扩展的 PATH/LD_LIBRARY_PATH）
+- 文件与检索：manage_files、search_code、list_file_tree（纯 Kotlin 实现，不依赖系统 grep）
+- 设备操作：tap、swipe、input_text、ui_dump、screenshot、logcat、应用管理（列出/启动/停止/提取 APK）
+- 工具链增强：env_info、pkg_search、pkg_install
+
+【新增：工作区】
+- 工具链工作区：无需安装 rootfs，直接用已装扩展的环境执行命令
+- Rootfs 工作区 / SSH 工作区：命令走 workspace_shell
+- 工具隔离：绑定 Rootfs / SSH 工作区时，设备级工具（run_shell、run_cli、UI 自动化、截屏、日志、应用管理）不再暴露给 AI
+- 无 root / Shizuku 时不暴露依赖权限的工具
+- 工作区状态：工具链工作区无权限显示「禁用」，有权限显示「就绪」
+- 文件页：工作区文件 + 已装扩展运行环境
+
+【新增：扩展商店】
+- 在线索引，搜索覆盖 3000+ Termux 软件包
+- Termux .deb 安装（ar + data.tar.xz 解压，依赖自动安装）
+- 国内镜像加速（GitHub 代理 + 清华/中科大/北外镜像）
+- 安装即时进度、可取消、卸载保守模式（不级联删除依赖）
 
 【性能】
-- 头像动画按需运行：头像不转时不再创建旋转动画，减少无谓刷新。
-- 渐变背景动画接入生命周期：切到后台自动暂停，回前台继续。
+- 头像动画按需运行（非加载态不创建旋转动画）
+- 渐变背景动画接入生命周期（切后台自动暂停）
 
 【修复】
-- 修复 APK 版本名显示为 null（改版本号时误删 versionName）。
+- 修复 APK 版本名显示为 null
+- 修复设备 Shell 审批：关闭时不再拦截任何命令
+- 修复 rm -rf /data/... 等安全路径被误判为危险命令
+- 修复工作区状态在列表与选择弹窗中的显示
 
-【本地工具与工作区（相对官方版的增强）】
-- 本地工具：run_shell、run_cli、manage_files、search_code、list_file_tree、env_info、pkg_search、pkg_install
-- 设备操作：tap、swipe、input_text、ui_dump、screenshot、logcat、应用管理（列出/启动/停止/提取 APK）
-- 工具链工作区：无需安装 rootfs，直接用已装扩展聚合的环境执行命令（需 root/Shizuku）
-- Rootfs 工作区与 SSH 工作区：命令走 workspace_shell
-- 工作区工具隔离：绑定 Rootfs / SSH 工作区时，设备级工具不再暴露给 AI
-- 无 root / Shizuku 时不暴露依赖权限的工具
-- 设备 Shell 审批开关（默认关闭）
-- 工作区状态显示：工具链工作区无权限显示「禁用」，有权限显示「就绪」
-- 扩展商店：在线索引（3000+ Termux 软件包）、Termux .deb 安装、依赖自动安装、国内镜像加速
+【移除】
+- 赞助入口与捐赠页
 
-【说明】
+【兼容性说明】
 - 数据库版本与官方 3.1.1 一致（均为 32），备份可互相恢复
-- 本版备份含有官方版没有的本地工具选项，官方版恢复时需先移除这些选项
+- 本版备份含官方版没有的本地工具选项（shell / cli / files / search_code / file_tree /
+  toolchain / ui_automation / screenshot / logcat / app_manager / web_fetch），
+  用官方版恢复前需先从 settings.json 的 localTools 中移除这些项，否则解析失败
