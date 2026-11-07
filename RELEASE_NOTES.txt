@@ -94,3 +94,8 @@ RikkaHub 3.1.1 增强版
 - 完全移除赞助入口与赞助页面
 - 修复工具链 node/npm CANNOT LINK（Termux libc++ 优先）
 - 工具链工作区只创建 files 目录；文件页第二区域为「运行环境」
+
+最新版本更新：
+- 工作区工具泾渭分明：PRoot 工作区命令走 rootfs_shell，SSH 工作区走 remote_shell，工具链工作区直接用 run_shell / run_cli
+- 绑定 Rootfs / SSH 工作区时设备级工具（run_shell、run_cli、工具链增强、界面自动化、截屏、日志、应用管理）不再暴露给 AI
+- 未绑定工作区时按权限暴露：有 root 全给，无 root 只给普通权限工具
