@@ -649,10 +649,9 @@ private fun WorkspaceToolApprovalCard(
     }
 }
 
-/** 工具链工作区的审批项：命令、写入、修改（读取不拦）。 */
+/** 工具链工作区的审批项：写入、修改（读取不拦；命令走设备级 run_shell/run_cli，不受工作区审批管）。 */
 @Composable
 private fun toolchainToolApprovalItems() = listOf(
-    Triple("workspace_shell", "执行命令", HugeIcons.ComputerTerminal01),
     Triple("workspace_write_file", "写入文件", HugeIcons.FileEdit),
     Triple("workspace_edit_file", "修改文件", HugeIcons.PencilEdit01),
 )
@@ -662,7 +661,7 @@ private fun workspaceToolApprovalItems() = listOf(
     Triple("workspace_read_file", stringResource(R.string.workspace_detail_tool_read_file), HugeIcons.FileView),
     Triple("workspace_write_file", stringResource(R.string.workspace_detail_tool_write_file), HugeIcons.PencilEdit01),
     Triple("workspace_edit_file", stringResource(R.string.workspace_detail_tool_edit_file), HugeIcons.FileEdit),
-    Triple("workspace_shell", stringResource(R.string.workspace_detail_tool_shell), HugeIcons.ComputerTerminal01),
+    Triple("rootfs_shell", stringResource(R.string.workspace_detail_tool_shell), HugeIcons.ComputerTerminal01),
 )
 
 @Composable

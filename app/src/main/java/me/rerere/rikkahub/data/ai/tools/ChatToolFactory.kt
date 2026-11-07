@@ -18,6 +18,7 @@ import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.workspace.WorkspaceShellStatus
+import me.rerere.workspace.WorkspaceType
 import java.io.File
 import kotlin.uuid.Uuid
 
@@ -68,7 +69,7 @@ class ChatToolFactory(
         val boundWorkspace = assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }
         // 工具链工作区：设备级工具（run_shell/run_cli/工具链增强）就是它的工作方式，不过滤
         // Rootfs / SSH 工作区：设备级工具一律不暴露，命令统一走工作区专属 shell（rootfs_shell / remote_shell）
-        val isToolchain = boundWorkspace?.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN
+        val isToolchain = boundWorkspace?.workspaceType() == WorkspaceType.TOOLCHAIN
         val hideDeviceTools = boundWorkspace != null && !isToolchain
         val effectiveLocalTools = if (hideDeviceTools) {
             assistant.localTools.filterNot { it in DEVICE_LEVEL_LOCAL_TOOLS }

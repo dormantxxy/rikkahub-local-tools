@@ -113,7 +113,6 @@ object ToolUIRegistry {
         list.associateBy { it.toolName } + mapOf(
             "rootfs_shell" to ShellToolUI,
             "remote_shell" to ShellToolUI,
-            "toolchain_shell" to ShellToolUI,
         )
     }
 

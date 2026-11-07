@@ -31,6 +31,8 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
+    "rootfs_shell" to true,
+    "remote_shell" to true,
 )
 
 /** 直接写文件的工具, 只在支持 [WorkspaceCapabilities.fileWriteTools] 的工作区提供 */
@@ -269,7 +271,7 @@ private fun createShellTool(
             required = listOf("command"),
         )
     },
-    needsApproval = { needsApproval("workspace_shell") },
+    needsApproval = { needsApproval(if (workspace.workspaceType() == WorkspaceType.LOCAL) "rootfs_shell" else "remote_shell") },
     execute = {
         val params = it.jsonObject
         val command = params.string("command") ?: error("command is required")
