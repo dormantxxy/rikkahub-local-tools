@@ -24,7 +24,7 @@ import kotlin.uuid.Uuid
 
 private const val TAG = "ChatToolFactory"
 
-/** 直接操作宿主机的本地工具：绑定普通 Rootfs 工作区时全部不暴露。 */
+/** 直接操作宿主机的本地工具：绑定普通 Rootfs / SSH 工作区时全部不暴露。 */
 private val DEVICE_LEVEL_LOCAL_TOOLS = setOf(
     me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Shell,
     me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Cli,
@@ -63,16 +63,22 @@ class ChatToolFactory(
         model: Model,
         workspaceCwd: String? = null,
     ): List<Tool> {
-        val workspaceTools = createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         val boundWorkspace = assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }
-        // 工具链工作区：设备级工具（run_shell/run_cli/工具链增强）就是它的工作方式，不过滤
+        // 工具链工作区、以及未绑定工作区的默认环境：设备级工具（run_shell/run_cli/工具链增强等）就是它的工作方式，不过滤
         // Rootfs / SSH 工作区：设备级工具一律不暴露，命令统一走工作区专属 workspace_shell
-        val isToolchain = boundWorkspace?.workspaceType() == WorkspaceType.TOOLCHAIN
-        val hideDeviceTools = boundWorkspace != null && !isToolchain
+        val usesDeviceTools = boundWorkspace == null || boundWorkspace.workspaceType() == WorkspaceType.TOOLCHAIN
+        val hideDeviceTools = boundWorkspace != null && !usesDeviceTools
         val effectiveLocalTools = if (hideDeviceTools) {
             assistant.localTools.filterNot { it in DEVICE_LEVEL_LOCAL_TOOLS }
         } else {
             assistant.localTools
+        }
+        // 工具链工作区（含未绑定工作区的默认环境）严禁使用 Rootfs 工作区工具：
+        // 它没有 /workspace、/skills、/upload 挂载，文件操作走 manage_files 与 run_shell（宿主机绝对路径）
+        val workspaceTools = if (usesDeviceTools) {
+            emptyList()
+        } else {
+            createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         }
         val tools = buildList {
             if (assistant.enableMemory) {

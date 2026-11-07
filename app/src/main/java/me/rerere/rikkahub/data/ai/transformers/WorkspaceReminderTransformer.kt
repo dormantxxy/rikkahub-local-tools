@@ -200,11 +200,10 @@ private fun buildToolchainWorkspacePrompt(
     appendLine("- The workspace files directory on the host is \"" + layout.workspaceDir + "\". Use absolute host paths for all workspace tools.")
     appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (installed extensions: node, python, git, rg) with root or Shizuku privileges.")
     appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount in this workspace type.")
-    appendLine("- Available tools:")
-    appendLine("  - workspace_read_file: read file contents.")
-    appendLine("  - workspace_write_file / workspace_edit_file: create files or make precise edits.")
-    appendLine("  - run_shell / run_cli: run shell commands using the aggregated extension PATH (toolchain environment).")
-    appendLine("- Prefer workspace_edit_file for targeted edits over rewriting whole files.")
+    appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
+    appendLine("- Do NOT use workspace_* tools here: there is no Rootfs, so workspace_read_file / workspace_write_file / workspace_edit_file / workspace_shell are unavailable.")
+    appendLine("- Read and write files with manage_files using absolute host paths, e.g. \"" + layout.workspaceDir + "/notes.md\".")
+    appendLine("- Prefer targeted edits over rewriting whole files.")
     if (!cwd.isNullOrBlank()) {
         appendLine("- Current working directory: " + cwd + ".")
     }
