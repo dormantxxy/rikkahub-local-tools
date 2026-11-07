@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,44 +45,30 @@ jobs:
           export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
           SDKMGR="$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
-          if [ -z "$SDKMGR" ]; then
-            echo "sdkmanager not found, trying to locate"
-            SDKMGR="$(find "$ANDROID_HOME" -name sdkmanager 2>/dev/null | head -n1)"
-          fi
+          if [ -z "$SDKMGR" ]; then SDKMGR="$(find "$ANDROID_HOME" -name sdkmanager 2>/dev/null | head -n1)"; fi
           echo "sdkmanager=$SDKMGR"
           yes | "$SDKMGR" --licenses >/dev/null 2>&1 || true
-          # 逐个安装 + 重试：NDK 有 700MB，时不时会网络抖动
-          # (Error reading Zip content / Connection reset)，一次失败不能把整个构建搞挂
           install_pkg() {
-            local pkg="$1"
-            local i
+            local pkg="$1"; local i
             for i in 1 2 3; do
-              if "$SDKMGR" "$pkg" >/dev/null 2>&1; then
-                echo "installed: $pkg"
-                return 0
-              fi
-              echo "retry($i) $pkg"
-              sleep 8
+              if "$SDKMGR" "$pkg" >/dev/null 2>&1; then echo "installed: $pkg"; return 0; fi
+              echo "retry($i) $pkg"; sleep 8
             done
-            echo "::warning::could not install $pkg"
-            return 0
+            echo "::warning::could not install $pkg"; return 0
           }
           install_pkg "platform-tools"
           install_pkg "build-tools;36.0.0"
           install_pkg "build-tools;37.0.0"
           install_pkg "platforms;android-36"
           install_pkg "platforms;android-37"
-          # NDK 必需（workspace/terminal 模块有 CMake 源码），多给几轮机会
           install_pkg "ndk;28.2.13676358"
-          if [ ! -d "$ANDROID_HOME/ndk/28.2.13676358" ]; then
-            echo "::error::NDK 28.2.13676358 is still missing after 3 attempts"
-            exit 1
-          fi
+          if [ ! -d "$ANDROID_HOME/ndk/28.2.13676358" ]; then echo "::error::NDK 28.2.13676358 missing"; exit 1; fi
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
-      - name: Generate placeholder google-services.json
+      - name: Placeholder google-services.json
         run: |
-          cat > app/google-services.json << 'JSON'
+          if [ ! -f app/google-services.json ]; then
+          cat > app/google-services.json <<'JSON'
           {
             "project_info": {
               "project_number": "123456789000",
@@ -94,66 +79,45 @@ jobs:
               {
                 "client_info": {
                   "mobilesdk_app_id": "1:123456789000:android:0000000000000000000000",
-                  "android_client_info": {
-                    "package_name": "me.rerere.rikkahub"
-                  }
+                  "android_client_info": { "package_name": "me.rerere.rikkahub" }
                 },
                 "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
+                "api_key": [ { "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" } ],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+              },
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:123456789000:android:1111111111111111111111",
+                  "android_client_info": { "package_name": "me.rerere.rikkahub.debug" }
+                },
+                "oauth_client": [],
+                "api_key": [ { "current_key": "AIzaSyAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" } ],
+                "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
               }
             ],
             "configuration_version": "1"
           }
           JSON
-          # debug 变体带 .debug 后缀，需要额外的 client
-          echo "google-services.json written"
+          fi
 
       - name: Configure fixed signing keystore
         run: |
           set -e
-          # 固定签名：直接用仓库里提交的 keystore，绝不现场生成。
-          # 现场 keytool 生成会让每个包的签名都不同，必须卸载重装。
           KEYSTORE="$PWD/app/keystore/release.keystore"
-          if [ ! -f "$KEYSTORE" ]; then
-            echo "::error::app/keystore/release.keystore not found - build would be signed with a different key"
-            exit 1
-          fi
-          ls -l "$KEYSTORE"
+          if [ ! -f "$KEYSTORE" ]; then echo "::error::keystore not found"; exit 1; fi
           keytool -list -keystore "$KEYSTORE" -storepass android -alias androiddebugkey
-          cat >> local.properties << EOF
+          cat >> local.properties <<EOF
           storeFile=$KEYSTORE
           storePassword=android
           keyAlias=androiddebugkey
           keyPassword=android
           EOF
-          echo "local.properties:"
-          cat local.properties
-
-      - name: Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
 
       - name: Grant execute permission
         run: chmod +x gradlew
 
-      - name: Build GitHub release APK
-        env:
-          # 让 versionCode 随 run number 递增，保证能覆盖安装旧包（不会 VERSION_DOWNGRADE）
-          RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
-        run: ./gradlew assembleGithubRelease --no-daemon --stacktrace
+      - name: Build GitHub release APK (R8)
+        run: ./gradlew assembleGithubRelease --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -161,14 +125,14 @@ jobs:
           name: rikkahub-local-tools-apk
           path: app/build/outputs/apk/github/release/*.apk
 
-      - name: Publish prerelease
-        uses: softprops/action-gh-release@v2
+      - name: Publish Release (new tag every build)
         if: success()
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: local-tools
-          name: Local Tools Build
-          prerelease: true
-          body: |
-            RikkaHub with Local Tools support build (commit `${{ github.sha }}`)
+          tag_name: v3.1.1-build${{ github.run_number }}
+          name: RikkaHub 3.1.1 build${{ github.run_number }}
+          body_path: RELEASE_NOTES.txt
+          prerelease: false
+          make_latest: true
           files: |
             app/build/outputs/apk/github/release/*.apk
