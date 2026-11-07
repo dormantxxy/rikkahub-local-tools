@@ -117,6 +117,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build GitHub release APK (R8)
+        env:
+          RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
         run: ./gradlew assembleGithubRelease --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
       - name: Upload APK artifact

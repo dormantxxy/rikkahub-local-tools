@@ -24,12 +24,8 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        // 版本号 = 194 + (提交数 - 74)。用 providers.exec 兼容配置缓存；构建失败不占号。
-        versionCode = 194 + (providers.exec {
-            commandLine("git", "rev-list", "--count", "HEAD")
-            workingDir = rootProject.projectDir
-        }.standardOutput.asText.get().trim().toIntOrNull()?.minus(74) ?: 0).coerceAtLeast(1)
-        versionName = "3.1.1"
+        // 版本号 = 194 + run_number（workflow 传 RIKKAHUB_VERSION_BUMP）
+        versionCode = 194 + (System.getenv("RIKKAHUB_VERSION_BUMP")?.toIntOrNull() ?: 0)
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
