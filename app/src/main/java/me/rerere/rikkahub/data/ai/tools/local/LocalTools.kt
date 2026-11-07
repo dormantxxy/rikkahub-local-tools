@@ -89,7 +89,8 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        if (options.contains(LocalToolOption.Shell)) {
+        // run_shell（设备命令）依赖 root/Shizuku：无权限时不暴露
+        if (options.contains(LocalToolOption.Shell) && toolchainExecutor.hasPrivilege()) {
             // 设备 Shell 审批开关：关闭时完全不拦截（包括风险命令）；开启时仅风险命令需要审批
             tools.add(
                 if (deviceShellApproval) {
@@ -105,7 +106,8 @@ class LocalTools(
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
         // run_cli 依赖 root/Shizuku：读 App 启动时缓存的权限状态（轻量，不启动 su）
         if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) tools.add(runCliTool)
-        if (options.contains(LocalToolOption.Toolchain)) {
+        // 工具链增强（env_info/pkg_search/pkg_install）依赖 root/Shizuku：无权限时不暴露
+        if (options.contains(LocalToolOption.Toolchain) && toolchainExecutor.hasPrivilege()) {
             tools.add(envInfoTool)
             tools.add(pkgSearchTool)
             tools.add(pkgInstallTool)

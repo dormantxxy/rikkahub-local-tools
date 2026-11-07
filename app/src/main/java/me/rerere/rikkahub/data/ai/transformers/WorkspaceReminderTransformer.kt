@@ -237,9 +237,9 @@ private fun buildWorkspacePrompt(
     appendLine(
         "  - `workspace_write_file` / `workspace_edit_file`: create files, or make precise edits to existing files."
     )
-    appendLine("  - `rootfs_shell`: run shell commands (the files area is mounted at /workspace).")
+    appendLine("  - `workspace_shell`: run shell commands (the files area is mounted at /workspace).")
     appendLine(
-        "- Prefer `rootfs_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files."
+        "- Prefer `workspace_shell` for tasks that standard Unix tools handle well, and prefer `workspace_edit_file` for targeted edits over rewriting whole files."
     )
     appendLine(
         "- The skills directory is mounted at `/skills`. Each skill is a subdirectory `/skills/<skill-name>/` containing a `SKILL.md` (with `name` and `description` frontmatter) plus any supporting files. Read a skill's `SKILL.md` before using it, and follow its instructions."
@@ -285,9 +285,9 @@ private fun buildSshWorkspacePrompt(
     appendShellLine(shell)
     appendLine("- Available tools:")
     appendLine("  - `workspace_read_file`: read file contents.")
-    appendLine("  - `remote_shell`: run shell commands on the remote machine (defaults to the workspace directory).")
+    appendLine("  - `workspace_shell`: run shell commands on the remote machine (defaults to the workspace directory).")
     appendLine(
-        "- There are no file write or edit tools in this workspace. Create and modify files with `remote_shell`, for example a quoted heredoc (`cat > file <<'EOF'`) for new content, or `sed`, `patch` or a short script for targeted edits. Prefer targeted edits over rewriting whole files."
+        "- There are no file write or edit tools in this workspace. Create and modify files with `workspace_shell`, for example a quoted heredoc (`cat > file <<'EOF'`) for new content, or `sed`, `patch` or a short script for targeted edits. Prefer targeted edits over rewriting whole files."
     )
     if (!cwd.isNullOrBlank()) {
         appendLine(
@@ -314,10 +314,10 @@ private fun buildUnreachablePrompt(workspace: WorkspaceEntity, layout: Workspace
 
 private fun StringBuilder.appendShellLine(shell: String) {
     if (shell.substringAfterLast('/') == "bash") {
-        appendLine("- `rootfs_shell` runs commands with `$shell`.")
+        appendLine("- `workspace_shell` runs commands with `$shell`.")
     } else {
         appendLine(
-            "- `rootfs_shell` runs commands with `$shell`, a POSIX shell. Bash is not installed, so avoid bash-only syntax such as arrays, here-strings (`<<<`) and brace expansion."
+            "- `workspace_shell` runs commands with `$shell`, a POSIX shell. Bash is not installed, so avoid bash-only syntax such as arrays, here-strings (`<<<`) and brace expansion."
         )
     }
 }

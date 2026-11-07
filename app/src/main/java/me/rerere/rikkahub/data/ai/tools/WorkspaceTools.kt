@@ -12,14 +12,13 @@ import me.rerere.ai.ui.DiffMetadata
 import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.toMetadata
 import me.rerere.rikkahub.data.files.FilesManager
-import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
 import me.rerere.rikkahub.utils.generateUnifiedDiff
-import me.rerere.workspace.WorkspaceType
 import me.rerere.workspace.WorkspaceCapabilities
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceLayout
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceType
 import org.koin.java.KoinJavaComponent.getKoin
 import java.io.ByteArrayOutputStream
 
@@ -31,8 +30,6 @@ val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_write_file" to false,
     "workspace_edit_file" to false,
     "workspace_shell" to true,
-    "rootfs_shell" to true,
-    "remote_shell" to true,
 )
 
 /** 直接写文件的工具, 只在支持 [WorkspaceCapabilities.fileWriteTools] 的工作区提供 */
@@ -60,8 +57,9 @@ suspend fun createWorkspaceTools(
             add(createWriteFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
             add(createEditFileTool(workspaceId, layout, ::needsApproval, workspaceRepository))
         }
+        // 工具链工作区不提供 workspace_shell：命令直接用设备级 run_shell / run_cli（聚合扩展环境）
         if (workspace.workspaceType() != WorkspaceType.TOOLCHAIN) {
-            add(createShellTool(workspace, workspaceId, layout, ::needsApproval, workspaceRepository, shellCwd))
+            add(createShellTool(workspaceId, layout, ::needsApproval, workspaceRepository, shellCwd))
         }
     }
 }
@@ -218,24 +216,17 @@ private fun createEditFileTool(
 )
 
 private fun createShellTool(
-    workspace: WorkspaceEntity,
     workspaceId: String,
     layout: WorkspaceLayout,
     needsApproval: (String) -> Boolean,
     workspaceRepository: WorkspaceRepository,
     defaultCwd: String? = null,
 ) = Tool(
-    name = when (workspace.workspaceType()) {
-        WorkspaceType.LOCAL -> "rootfs_shell"
-        WorkspaceType.SSH -> "remote_shell"
-        else -> "rootfs_shell"
-    },
+    name = "workspace_shell",
     description = buildString {
-        when (workspace.workspaceType()) {
-            WorkspaceType.LOCAL -> append("Run a shell command inside the bound PRoot rootfs. The workspace files area is mounted at ${layout.workspaceDir}. ")
-            WorkspaceType.SSH -> append("Run a shell command on the remote SSH machine. The workspace files directory is at ${layout.workspaceDir}. ")
-            else -> append("Run a shell command in the workspace. ")
-        }
+        append(
+            "Run a shell command in the assistant's bound workspace Rootfs. The workspace files area is mounted at ${layout.workspaceDir}. "
+        )
         append("Use cwd for a path relative to the workspace files root. ")
         if (!defaultCwd.isNullOrBlank()) {
             append("Defaults to '$defaultCwd'. ")
@@ -271,7 +262,7 @@ private fun createShellTool(
             required = listOf("command"),
         )
     },
-    needsApproval = { needsApproval(if (workspace.workspaceType() == WorkspaceType.LOCAL) "rootfs_shell" else "remote_shell") },
+    needsApproval = { needsApproval("workspace_shell") },
     execute = {
         val params = it.jsonObject
         val command = params.string("command") ?: error("command is required")
