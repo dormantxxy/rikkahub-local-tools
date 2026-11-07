@@ -315,9 +315,6 @@ dependencies {
 
     // icons
     implementation(libs.huge.icons)
-    // 老 Markdown 引擎（AST 直渲 + HTML 渲染）需要 intellij-markdown 与 jsoup
-    implementation(libs.jetbrains.markdown)
-    implementation(libs.jsoup)
 
     // image viewer
     implementation(libs.image.viewer)

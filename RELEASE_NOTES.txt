@@ -1,27 +1,101 @@
 RikkaHub 3.1.1 增强版
 
 本次更新：
+1. 扩展商店改为在线模式：默认显示 16 个精选扩展，搜索支持全部 3000+ Termux 软件包（清华/中科大/北外镜像索引，24h 缓存）。
+2. 商店界面重构：搜索框、分类标签、分类色图标、依赖数量展示、版本选择、已安装更新检测。
+3. Termux .deb 安装支持（ar + data.tar.xz 解压、路径映射），安装时自动解析并安装全部依赖。
+4. 扩展安装下载全部走国内镜像站（GitHub 镜像 / Termux 镜像）。
+5. Shizuku 改用 UserService 执行 shell（照搬 MobiCode 实现，替代私有的 Shizuku.newProcess），修复 Shizuku 无法连接问题。
+6. 新增本地工具：env_info、pkg_search、pkg_install、tap、swipe、input_text、ui_dump、screenshot、logcat。
+7. 修复输入框：有文字时按钮始终为发送（生成中也可加入队列），空输入+生成中才显示停止。
+8. search_code / list_file_tree / manage_files 搜索改为纯 Kotlin 实现，修复 Android grep 无输出问题。
+9. 左侧滑页移除图像生成入口，替换为扩展商店入口。
+10. 设备 Shell 审批开关（本地工具列表最下面，默认关闭）。
 
-【性能】
-- 换回轻量 Markdown 引擎：3.x 的新引擎对每条消息都要走 Markdown → HTML → Jsoup → DOM，
-  比 2.5.1 重得多。现在纯文本消息直接渲染 AST，只有内嵌 HTML 的消息才走重型路径，
-  长对话与流式输出明显更顺。
-- 头像动画按需运行：非加载态不再常驻旋转动画。
-- 渐变背景动画接入生命周期：切到后台自动暂停，不再空转发热。
+修复：
+- 设备 Shell 审批关闭时不再拦截任何命令（包括风险命令）；只有开启审批时才拦截风险命令
+- 修复 rm -rf /data/... 等安全路径被误判为危险命令的问题
 
-【修复】
-- 修复 build.gradle 丢失 versionName，导致 APK 版本名显示为 null。
+商店增强：
+- 页面支持下拉刷新（重新下载索引），与列表滑动不冲突
+- 点击安装立即显示进度；安装中可取消，取消后自动清理下载缓存
+- 安装完成自动删除下载包与临时文件，不额外占用空间
+- 打开商店自动后台加载索引，所有包显示在对应分类列表
+- 搜索框改为紧凑样式；搜索框与分类栏固定，仅列表滚动
+- 本地工具页面提示简化为纯中文
 
-【保留的功能】
-- LaTeX 公式渲染与开关、行内公式自动换行拆分
-- 搜索引用角标、引用文本高亮开关
-- 工作区图片路径解析（Markdown 里的 rootfs 绝对路径可正常显示）
-- 代码高亮、Mermaid 图、表格、差异视图
+修复：
+- 修复 run_shell_command 执行时无法停止的问题：Shizuku 执行改为可取消，点击停止立即生效
 
-历史版本功能（上一版）：
-- 扩展商店在线模式：默认 16 个精选扩展，搜索覆盖 3000+ Termux 软件包
-- Termux .deb 安装支持（ar + data.tar.xz 解压、依赖自动安装）
-- 本地工具：env_info、pkg_search、pkg_install、tap、swipe、input_text、ui_dump、screenshot、logcat、应用管理
-- 工具链工作区：无需 rootfs，用已装扩展的聚合环境执行命令
-- 工作区工具隔离：绑定 Rootfs/SSH 时设备级工具不再暴露，命令走 workspace_shell
-- 设备 Shell 审批开关（默认关闭）
+最新版本更新：
+- 内置 17 个扩展全部镜像到自建仓库 rikkahub-extensions（防源站失效，下载更稳）
+- 修复工具链环境：GIT_EXEC_PATH、SSL_CERT_FILE、版本目录冒号、Termux sh 兼容链接、同名工具新装优先
+- 商店：分类列表显示全部索引包、下拉刷新重新下载索引、安装即时进度、安装中可取消、库/插件标记
+- 移除 Firebase Analytics/Crashlytics（不再出现 Enable Google Play services 通知）
+- 修复 run_shell_command 执行时无法停止的问题（Shizuku 执行可取消，停止立即生效）
+- GitHub 代理按实测排序（gh-proxy.com 优先），Termux 镜像按实测排序（中科大优先）
+
+最新版本更新：
+- 临时文件统一到 /storage/emulated/0/RikkaHub/tmp（普通权限自动回退 Android/data，不再散落）
+- 版本号显示限制 20 字符（超长省略，不顶走卸载/更新按钮）
+- 工具链修复：Git 优先使用 Termux Git 2.56（完整 remote helper），自动补 CURL_CA_BUNDLE/GIT_SSL_CAINFO（HTTPS 证书）
+- 内置 17 个扩展镜像到自建仓库 rikkahub-extensions（防源站失效）
+
+最新版本更新：
+- 新增「应用管理」本地工具：list_apps / app_info / launch_app / force_stop / extract_apk（需 root/Shizuku）
+- 修复 root shell 挂载命名空间隔离：自动 nsenter 进入 init 命名空间，/data/data 下所有应用完整可见
+- 本地工具页新增「应用管理」开关（需 root/Shizuku）
+
+最新版本更新：
+- 修复 Magisk root 挂载命名空间：su -c 加 nsenter 进入 init 命名空间，/data/data 下所有应用可见（与 Shizuku 一致）
+- run_shell_command 自动分流：命令首词命中已装扩展时自动用聚合工具链环境执行（扩展二进制不再 CANNOT LINK）
+- 默认工作目录统一到 files/RikkaHub/（run_shell_command / manage_files / search_code / file_tree 与 run_cli 一致）
+- 商店「精选」只显示内置 17 个扩展（不再混入已安装的 Termux 包和依赖）
+- su 调用改用 /system/bin/su 绝对路径（避免 PATH 里假 su 劫持）
+- 商店依赖包沉底显示，不与其他包交叉
+- 卸载主包级联卸载未被共用的依赖
+
+最新版本更新：
+- 商店多任务：安装/卸载并行进行，退出页面后台继续，重进状态保留
+- 卸载显示进度，卸载中按钮禁用态；卸载保守模式（不级联删依赖）
+- 搜索默认全部栏显示全部结果，点击分类后筛选；搜索框加清空按钮
+- 商店排序按名字首字（内置不置顶）；顶栏点击回到列表顶部；修复分类页错位
+- 商店：分类按钮跟随左右滑动联动；点分类完全跳到位；返回键优先退出搜索；搜索各分类页显示筛选结果
+
+最新版本更新：
+- 新增「工具链工作区」：无需安装 rootfs，使用已装扩展聚合的工具链环境执行命令（需 root/Shizuku）
+- 工具链工作区文件放在 /storage/emulated/0/RikkaHub/workspaces/<id>/files，方便直接查看
+- 工具链工作区详情页展示执行通道、已安装扩展数、工作目录
+- 无 root/Shizuku 时不允许创建工具链工作区
+- 未绑定工作区时，AI 默认操作目录改为 /storage/emulated/0/RikkaHub（已授予「所有文件访问」时；未授权自动回退 App 私有目录）
+- 左滑新增「文件」页：文件目录（/storage/emulated/0/RikkaHub）+ 运行环境（已装扩展目录）
+
+最新版本更新：
+- 未绑定工作区时 AI 默认目录改为 /storage/emulated/0/RikkaHub/tmp（临时区，可在文件管理器直接查看和清理）
+- 工具链工作区「文件」页第二区域改为「运行环境」，固定显示已装扩展目录
+- 工具链工作区工具审批改为：执行命令 / 写入文件 / 修改文件（读取不拦）
+
+最新版本更新：
+- 工具链工作区不再显示工具审批卡（命令由「设备命令审批」统一管理），保留执行通道信息
+- 绑定普通 Rootfs 工作区时，不再把设备级本地工具暴露给 AI（设备命令/工具链/界面自动化/截屏/日志/应用管理），命令统一走 workspace_shell
+
+最新版本更新：
+- 工具链工作区不再创建多余的 linux/ 和 tmp/ 目录（只保留 files/）
+
+最新版本更新：
+- 修复工具链里 node 等 Termux 二进制 CANNOT LINK（Termux libc++ 优先，避免被 ripgrep 等自带旧版覆盖）
+
+最新版本更新：
+- 修复工具链 node/npm CANNOT LINK（Termux libc++ 优先，避免被自带旧版的扩展覆盖）
+
+最新版本更新：
+- 设备 Shell 工具名精简为 run_shell
+- 扩展管理页内「工具链扩展」更名为「扩展商店」
+- 完全移除赞助入口与赞助页面
+- 修复工具链 node/npm CANNOT LINK（Termux libc++ 优先）
+- 工具链工作区只创建 files 目录；文件页第二区域为「运行环境」
+
+最新版本更新：
+- 工作区工具泾渭分明：PRoot 工作区命令走 rootfs_shell，SSH 工作区走 remote_shell，工具链工作区直接用 run_shell / run_cli
+- 绑定 Rootfs / SSH 工作区时设备级工具（run_shell、run_cli、工具链增强、界面自动化、截屏、日志、应用管理）不再暴露给 AI
+- 未绑定工作区时按权限暴露：有 root 全给，无 root 只给普通权限工具
