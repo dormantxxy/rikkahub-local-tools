@@ -252,7 +252,7 @@ private fun WorkspaceItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = workspace.statusLabel(),
+                    text = workspace.statusLabel(privilegeAvailable = hasPrivilege),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

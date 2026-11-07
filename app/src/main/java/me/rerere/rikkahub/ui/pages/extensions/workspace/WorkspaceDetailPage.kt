@@ -1235,12 +1235,12 @@ private fun rememberDelayedVisibility(loading: Boolean, delayMillis: Long = 300)
 
 /** 列表里展示的状态: 远程工作区显示连接地址, 本地工作区显示 shell 状态 */
 @Composable
-internal fun WorkspaceEntity.statusLabel(): String =
-    if (isSsh()) {
-        sshSettings()?.let { "SSH · ${it.username}@${it.host}" } ?: "SSH"
-    } else {
-        shellStatus.toShellStatusLabel()
-    }
+internal fun WorkspaceEntity.statusLabel(privilegeAvailable: Boolean = true): String = when {
+    isSsh() -> sshSettings()?.let { "SSH · ${it.username}@${it.host}" } ?: "SSH"
+    // 工具链工作区依赖 root/Shizuku：无权限显示「禁用」，与 rootfs 未安装时的显示一致
+    workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN && !privilegeAvailable -> WorkspaceShellStatus.DISABLED.name.toShellStatusLabel()
+    else -> shellStatus.toShellStatusLabel()
+}
 
 @Composable
 internal fun String.toShellStatusLabel(): String = when (this) {

@@ -18,6 +18,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -42,6 +43,11 @@ internal fun WorkspaceSelectSheet(
     onManage: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 工具链工作区依赖 root/Shizuku：无权限时显示不可用
+    val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
+    val hasPrivilege by androidx.compose.runtime.produceState(initialValue = true) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberBottomSheetState(
@@ -77,7 +83,7 @@ internal fun WorkspaceSelectSheet(
                 workspaces.forEach { workspace ->
                     WorkspaceSelectRow(
                         title = workspace.name,
-                        status = workspace.statusLabel(),
+                        status = workspace.statusLabel(privilegeAvailable = hasPrivilege),
                         selected = workspace.id == assistant.workspaceId?.toString(),
                         onClick = { onSelect(workspace.id) },
                     )
