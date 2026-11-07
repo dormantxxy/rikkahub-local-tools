@@ -17,7 +17,7 @@ import me.rerere.rikkahub.data.localtools.ShellExecutor
  */
 internal fun buildSearchCodeTool(@Suppress("UNUSED_PARAMETER") executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "search_code",
-    description = "Search text across files on the device (pure Kotlin, no system grep). Params: pattern(required, text or regex), path(default app dir), include(glob like *.kt), max_results(default 100), case_sensitive(default false).",
+    description = "Search text across files on the device (pure Kotlin, no system grep). Params: pattern(required, text or regex), path(default temporary workspace: $defaultDir), include(glob like *.kt), max_results(default 100), case_sensitive(default false).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -47,7 +47,7 @@ internal fun buildSearchCodeTool(@Suppress("UNUSED_PARAMETER") executor: ShellEx
 /** 文件树：纯 Kotlin 实现（不依赖 shell find）。 */
 internal fun buildFileTreeTool(@Suppress("UNUSED_PARAMETER") executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "list_file_tree",
-    description = "List a directory tree on the device (pure Kotlin). Params: path(default app dir), depth(default 3), max_entries(default 300).",
+    description = "List a directory tree on the device (pure Kotlin). Params: path(default temporary workspace: $defaultDir), depth(default 3), max_entries(default 300).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

@@ -40,7 +40,7 @@ internal fun buildRunShellTool(
     installer: ExtensionInstaller? = null,
 ): Tool = Tool(
     name = "run_shell",
-    description = "Execute a shell command on the Android device (root via su if available, else normal app permission). Params: command, cwd(optional), timeout_seconds(optional).",
+    description = "Execute a shell command on the Android device (root via su if available). Default cwd is the temporary workspace: $defaultDir. Params: command, cwd(optional), timeout_seconds(optional).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
@@ -84,7 +84,7 @@ internal fun buildRunShellTool(
 /** 文件管理（list/read/write/delete/mkdir/copy/move/exists/search/info）。 */
 internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): Tool = Tool(
     name = "manage_files",
-    description = "Manage files on the Android device. Actions: list, read, write, delete, mkdir, copy, move, exists, search, info. Params: action(required), path, dst, content.",
+    description = "Manage files on the Android device. Default working area (temporary workspace): $defaultDir. Actions: list, read, write, delete, mkdir, copy, move, exists, search, info. Params: action(required), path, dst, content.",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {

@@ -9,6 +9,9 @@ import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.tts.provider.TTSManager
 
+/** 未绑定工作区时临时工作区的目录名（workspaces/<root>/files）。 */
+private const val TEMP_WORKSPACE_ROOT = "default"
+
 class LocalTools(
     private val context: Context,
     private val eventBus: AppEventBus,
@@ -22,24 +25,33 @@ class LocalTools(
 
     /**
      * 未绑定工作区时 AI 的默认工作目录：
-     * 已授予「所有文件访问」→ /storage/emulated/0/RikkaHub/tmp（AI 临时区，用户可见可清理）；
-     * 否则回退到 App 私有 files/RikkaHub。
+     * 有 root/Shizuku 且已授予「所有文件访问」→ 在 /storage/emulated/0/RikkaHub/workspaces/ 下建临时工作区
+     * （布局与工具链工作区一致：workspaces/<root>/files，用户可见、可自行清理）；
+     * 没有高级权限时仍用 /storage/emulated/0/RikkaHub/tmp；
+     * 都没授权时回退到 App 私有 files/RikkaHub。
      */
     private val rikkahubWorkDir: String by lazy {
-        val publicDir = java.io.File("/storage/emulated/0/RikkaHub/tmp")
         val canUsePublic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
             runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
-        val dir = if (canUsePublic) publicDir else java.io.File(context.filesDir, "RikkaHub")
-        runCatching { dir.mkdirs() }
-        // 授权了但目录不可写时仍回退私有，避免 AI 工具全部失败
-        val writable = runCatching {
-            val probe = java.io.File(dir, ".probe_" + System.nanoTime())
-            probe.writeText("x")
-            probe.delete()
-            true
-        }.getOrDefault(false)
-        if (writable) dir.absolutePath
-        else java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
+        val publicRoot = java.io.File("/storage/emulated/0/RikkaHub")
+        val candidates = buildList {
+            if (canUsePublic && toolchainExecutor.hasPrivilege()) {
+                // 临时工作区：与工具链工作区同一套目录约定 workspaces/<root>/files
+                add(java.io.File(publicRoot, "workspaces/" + TEMP_WORKSPACE_ROOT + "/files"))
+            }
+            if (canUsePublic) add(java.io.File(publicRoot, "tmp"))
+            add(java.io.File(context.filesDir, "RikkaHub"))
+        }
+        // 授权了但目录不可写时继续往后回退，避免 AI 工具全部失败
+        candidates.firstOrNull { dir ->
+            runCatching {
+                dir.mkdirs()
+                val probe = java.io.File(dir, ".probe_" + System.nanoTime())
+                probe.writeText("x")
+                probe.delete()
+                true
+            }.getOrDefault(false)
+        }?.absolutePath ?: java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
     }
 
     val javascriptTool by lazy { buildJavascriptTool() }

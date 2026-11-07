@@ -37,7 +37,7 @@ internal fun buildRunCliTool(executor: ToolchainExecutor, defaultDir: String): T
     description = "Run a CLI command inside the native MobiCode toolchain environment " +
         "(PATH/LD_LIBRARY_PATH aggregated from all installed extensions, executed via root). " +
         "Installed tools such as git, python3, node/npm, gcc/clang, java, apktool, php, sqlite3, rg are directly usable. " +
-        "Params: command(required), cwd(optional, default app files dir), timeout_seconds(optional, default 60).",
+        "Params: command(required), cwd(optional, default temporary workspace: $defaultDir), timeout_seconds(optional, default 60).",
     parameters = {
         InputSchema.Obj(
             properties = buildJsonObject {
