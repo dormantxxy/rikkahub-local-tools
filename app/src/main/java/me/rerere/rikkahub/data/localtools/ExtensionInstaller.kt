@@ -135,7 +135,7 @@ class ExtensionInstaller(
             }
         }
         if (changed) {
-            saveManifest(map)
+            writeManifest(map)
             _installed.value = map
         }
     }
