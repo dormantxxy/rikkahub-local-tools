@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -45,7 +46,9 @@ internal fun WorkspaceSelectSheet(
 ) {
     // 工具链工作区依赖 root/Shizuku：无权限时显示不可用
     val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
-    val hasPrivilege by androidx.compose.runtime.produceState(initialValue = true) {
+    // Shizuku 授权状态变化后要重新评估
+    val shizukuGranted by me.rerere.rikkahub.data.localtools.ShizukuHelper.permissionGranted.collectAsStateWithLifecycle()
+    val hasPrivilege by androidx.compose.runtime.produceState(initialValue = true, shizukuGranted) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
     }
     ModalBottomSheet(

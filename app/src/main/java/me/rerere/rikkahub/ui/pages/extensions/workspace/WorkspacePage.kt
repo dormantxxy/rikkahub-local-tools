@@ -69,7 +69,9 @@ fun WorkspacePage(vm: WorkspaceVM = koinViewModel()) {
     val toaster = LocalToaster.current
     val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
     // 是否有 root/Shizuku（工具链工作区依赖它）
-    val hasPrivilege by produceState(initialValue = true) {
+    // Shizuku 授权状态变化后要重新评估，否则刚授权的用户仍看到"禁用"
+    val shizukuGranted by me.rerere.rikkahub.data.localtools.ShizukuHelper.permissionGranted.collectAsStateWithLifecycle()
+    val hasPrivilege by produceState(initialValue = true, shizukuGranted) {
         value = withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
     }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
