@@ -99,9 +99,14 @@ internal fun searchFiles(
     val results = mutableListOf<String>()
     var scanned = 0
     val maxFileSize = 2L * 1024 * 1024
+    // 没有匹配时会遍历整棵树，搜 /sdcard 这种大目录能卡几分钟；
+    // 限制扫描文件数，到顶就停并说明，避免工具长时间无响应。
+    val maxScanFiles = 20_000
+    var scanLimitHit = false
     try {
         for (file in root.walkTopDown().onEnter { shouldEnter(it) }) {
             if (results.size >= maxResults) break
+            if (scanned >= maxScanFiles) { scanLimitHit = true; break }
             if (!file.isFile || file.length() > maxFileSize) continue
             if (includeRegex != null && !includeRegex.matches(file.name)) continue
             if (!isLikelyTextFile(file)) continue
@@ -123,7 +128,13 @@ internal fun searchFiles(
     }
     val body = if (results.isEmpty()) "未找到匹配（扫描 $scanned 个文件）" else results.joinToString("\n")
     // 达到上限要明说，否则模型会把"只看到前 N 条"当成"一共只有 N 条"
-    return if (results.size >= maxResults) "$body\n[truncated: reached max_results=$maxResults, there may be more matches]" else body
+    return when {
+        results.size >= maxResults ->
+            "$body\n[truncated: reached max_results=$maxResults, there may be more matches]"
+        scanLimitHit ->
+            "$body\n[truncated: stopped after scanning $maxScanFiles files, narrow the path or use include]"
+        else -> body
+    }
 }
 
 /** 遍历目录树（带缩进）。 */

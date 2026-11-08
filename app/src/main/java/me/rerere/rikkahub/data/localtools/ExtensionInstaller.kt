@@ -15,6 +15,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -104,6 +106,13 @@ class ExtensionInstaller(
         )
     }
 
+    /**
+     * 安装串行化。同一扩展被并发安装时（例如模型连续调用 pkg_install）会共用
+     * appTempFolder/ext_<id> 这个临时目录与同一个 archive，互相覆盖导致解压损坏。
+     * 安装本身是重操作，串行没有明显损失。
+     */
+    private val installMutex = Mutex()
+
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
     private val extRoot: File get() = File(context.filesDir, EXT_DIR)
     private val manifestFile: File get() = File(extRoot, MANIFEST)
@@ -186,29 +195,32 @@ class ExtensionInstaller(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit = {},
     ): Result<InstalledRecord> = withContext(Dispatchers.IO) {
-        try {
-            require(entry.downloadUrl.isNotBlank()) { "扩展 ${entry.name} 缺少下载地址" }
+        // 串行化安装：同一扩展被并发安装时共用 ext_<id> 临时目录与 archive，会互相覆盖。
+        installMutex.withLock {
+            try {
+                require(entry.downloadUrl.isNotBlank()) { "扩展 ${entry.name} 缺少下载地址" }
 
-            // 0) 确保 Termux 索引已加载（依赖解析需要）
-            if (entry.format.equals("deb", ignoreCase = true)) {
-                MobiCodeCatalog.ensureTermuxIndex(context)
+                // 0) 确保 Termux 索引已加载（依赖解析需要）
+                if (entry.format.equals("deb", ignoreCase = true)) {
+                    MobiCodeCatalog.ensureTermuxIndex(context)
+                }
+
+                // 1) 先安装依赖（Termux deb）
+                val dependencies = resolveDependencies(entry)
+                dependencies.forEachIndexed { index, dep ->
+                    if (isInstalled(dep.id)) return@forEachIndexed
+                    onUpdate(InstallUpdate(InstallPhase.INSTALLING, dependencyNote = "安装依赖 ${dep.name}（${index + 1}/${dependencies.size}）"))
+                    installSingle(dep, onUpdate).getOrThrow()
+                }
+
+                // 2) 安装自身
+                Result.success(installSingle(entry, onUpdate).getOrThrow())
+            } catch (e: CancellationException) {
+                File(context.appTempFolder, "ext_${entry.id}").deleteRecursively()
+                throw e
+            } catch (e: Throwable) {
+                Result.failure(e)
             }
-
-            // 1) 先安装依赖（Termux deb）
-            val dependencies = resolveDependencies(entry)
-            dependencies.forEachIndexed { index, dep ->
-                if (isInstalled(dep.id)) return@forEachIndexed
-                onUpdate(InstallUpdate(InstallPhase.INSTALLING, dependencyNote = "安装依赖 ${dep.name}（${index + 1}/${dependencies.size}）"))
-                installSingle(dep, onUpdate).getOrThrow()
-            }
-
-            // 2) 安装自身
-            Result.success(installSingle(entry, onUpdate).getOrThrow())
-        } catch (e: CancellationException) {
-            File(context.appTempFolder, "ext_${entry.id}").deleteRecursively()
-            throw e
-        } catch (e: Throwable) {
-            Result.failure(e)
         }
     }
 
@@ -221,6 +233,11 @@ class ExtensionInstaller(
         // git/curl/openssl 类需要 ca-certificates 提供 HTTPS 证书
         if (entry.id == "termux.git" || entry.depends.any { it.contains("curl", true) || it.contains("openssl", true) || it == "git" }) {
             queue.add("ca-certificates")
+        }
+        // Termux 把 pip 拆成了独立包（python-pip），装 python 不会自动带 pip，
+        // 结果 `pip` / `python3 -m pip` 全都不可用（实测）。这里一并装上。
+        if (entry.id == "termux.python") {
+            queue.add("python-pip")
         }
         while (queue.isNotEmpty()) {
             val name = queue.removeFirst()
