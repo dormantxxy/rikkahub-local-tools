@@ -12,6 +12,16 @@ import me.rerere.tts.provider.TTSManager
 /** 未绑定工作区时临时工作区的目录名（workspaces/<root>/files）。 */
 private const val TEMP_WORKSPACE_ROOT = "default"
 
+/** 提示词里值得告知模型的常用命令（顺序即展示顺序）。 */
+private val NOTABLE_COMMANDS = listOf(
+    "git", "curl", "wget", "rg", "jq", "less",
+    "python", "python3", "pip", "node", "npm", "npx",
+    "sqlite3", "ssh", "scp", "sftp", "ssh-keygen", "openssl",
+    "gcc", "clang", "make", "cmake", "go", "cargo", "rustc",
+    "java", "javac", "php", "zstd", "unzstd", "tar", "xz", "bzip2",
+)
+
+
 class LocalTools(
     private val context: Context,
     private val eventBus: AppEventBus,
@@ -95,12 +105,18 @@ class LocalTools(
     /** 设备级工具是否有 root/Shizuku：提示词要按这个决定说哪些工具可用。 */
     fun hasDevicePrivilege(): Boolean = toolchainExecutor.hasPrivilege()
 
-    /** 当前已安装扩展提供的命令名，用于提示词里如实描述可用工具。 */
+    /**
+     * 当前已安装扩展提供的主要命令名，用于提示词里如实描述可用工具。
+     *
+     * 直接列出每个扩展 bin/ 下的所有文件会得到上百个名字（`kadmin`、`kpropd`、`krb5kdc`
+     * 这类库附带的运维工具混在里面），既挤占 token 又会把 `sqlite3`、`ssh`、`wget`
+     * 这些真正常用的命令挤出提示词。这里只保留常见命令。
+     */
     fun installedCommandNames(): List<String> = runCatching {
-        extensionInstaller.installed.value.values
+        val available = extensionInstaller.installed.value.values
             .flatMap { rec -> java.io.File(rec.payloadDir, "bin").listFiles()?.map { it.name } ?: emptyList() }
-            .distinct()
-            .sorted()
+            .toSet()
+        NOTABLE_COMMANDS.filter { it in available }
     }.getOrDefault(emptyList())
 
     fun getTools(
