@@ -125,8 +125,14 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
     execute = {
         val p = it.jsonObject
         val action = p["action"]?.jsonPrimitive?.contentOrNull ?: error("action is required")
+        // ShellExecutor 的 root 进程初始目录是 /。文件工具的相对路径必须从默认工作区解析，
+        // 否则像 write { path: "a.txt" } 会错误写到 /a.txt 并因只读而失败。
+        fun resolveWorkspacePath(raw: String): String =
+            if (raw.startsWith("/")) raw else java.io.File(defaultDir, raw).path
         val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?.let(::resolveWorkspacePath)
         val dst = p["dst"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?.let(::resolveWorkspacePath)
         val content = p["content"]?.jsonPrimitive?.contentOrNull
         val mode = executor.preferredMode()
 

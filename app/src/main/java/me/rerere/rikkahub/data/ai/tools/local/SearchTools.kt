@@ -33,7 +33,11 @@ internal fun buildSearchCodeTool(@Suppress("UNUSED_PARAMETER") executor: ShellEx
     execute = {
         val p = it.jsonObject
         val pattern = p["pattern"]?.jsonPrimitive?.contentOrNull ?: error("pattern is required")
-        val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() } ?: defaultDir
+        // 相对路径按默认工作区解析：shell 进程的当前目录不可预期，
+        // 直接 File("src") 会落到 / 下找不到文件。
+        val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?.let { if (it.startsWith("/")) it else java.io.File(defaultDir, it).path }
+            ?: defaultDir
         val include = p["include"]?.jsonPrimitive?.contentOrNull
         val maxResults = (p["max_results"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 100).coerceIn(1, 500)
         val caseSensitive = p["case_sensitive"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
@@ -59,7 +63,11 @@ internal fun buildFileTreeTool(@Suppress("UNUSED_PARAMETER") executor: ShellExec
     },
     execute = {
         val p = it.jsonObject
-        val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() } ?: defaultDir
+        // 相对路径按默认工作区解析：shell 进程的当前目录不可预期，
+        // 直接 File("src") 会落到 / 下找不到文件。
+        val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?.let { if (it.startsWith("/")) it else java.io.File(defaultDir, it).path }
+            ?: defaultDir
         val depth = (p["depth"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 3).coerceIn(1, 10)
         val maxEntries = (p["max_entries"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 300).coerceIn(1, 2000)
         val output = listTree(path, depth, maxEntries)
@@ -113,7 +121,9 @@ internal fun searchFiles(
     } catch (_: Exception) {
         // 遍历异常时返回已收集结果
     }
-    return if (results.isEmpty()) "未找到匹配（扫描 $scanned 个文件）" else results.joinToString("\n")
+    val body = if (results.isEmpty()) "未找到匹配（扫描 $scanned 个文件）" else results.joinToString("\n")
+    // 达到上限要明说，否则模型会把"只看到前 N 条"当成"一共只有 N 条"
+    return if (results.size >= maxResults) "$body\n[truncated: reached max_results=$maxResults, there may be more matches]" else body
 }
 
 /** 遍历目录树（带缩进）。 */
@@ -123,10 +133,11 @@ internal fun listTree(rootPath: String, depth: Int, maxEntries: Int): String {
     if (!root.isDirectory) return "不是目录：$rootPath"
     val sb = StringBuilder()
     var count = 0
+    var truncated = false
     val rootDepth = root.absolutePath.count { it == '/' }
     try {
         for (f in root.walkTopDown().maxDepth(depth).onEnter { shouldEnter(it) }) {
-            if (count >= maxEntries) break
+            if (count >= maxEntries) { truncated = true; break }
             count++
             val relDepth = f.absolutePath.count { it == '/' } - rootDepth
             val indent = "  ".repeat(relDepth.coerceAtLeast(0))
@@ -134,7 +145,9 @@ internal fun listTree(rootPath: String, depth: Int, maxEntries: Int): String {
         }
     } catch (_: Exception) {
     }
-    return sb.toString().ifBlank { "(空目录)" }
+    val body = sb.toString().ifBlank { "(空目录)" }
+    // 达到上限要明说，否则模型会把"只列了前 N 项"当成"只有 N 项"
+    return if (truncated) "$body\n[truncated: stopped after $maxEntries entries, there may be more]" else body
 }
 
 /** 跳过 VCS/构建产物目录，避免搜索噪音与卡顿。 */
