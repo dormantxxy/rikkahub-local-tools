@@ -204,7 +204,7 @@ object MobiCodeCatalog {
                 }
             }
             // 下载索引
-            val text = downloadTermuxIndexText() ?: return@withContext cachedTermuxIndex(context)
+            val text = downloadTermuxIndexText(context) ?: return@withContext cachedTermuxIndex(context)
             val packages = parseTermuxPackages(text)
             if (packages.isNotEmpty()) {
                 runCatching {
@@ -220,11 +220,11 @@ object MobiCodeCatalog {
             return@withContext packages
         }
 
-    private fun downloadTermuxIndexText(): String? {
-        for (base in TERMUX_INDEX_SOURCES) {
+    private fun downloadTermuxIndexText(context: Context): String? {
+        val sources = DownloadRoute.indexSources(context, TERMUX_INDEX_PATH, TERMUX_INDEX_SOURCES)
+        for (url in sources) {
             try {
-                val url = java.net.URL(base + TERMUX_INDEX_PATH)
-                val conn = url.openConnection() as java.net.HttpURLConnection
+                val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                 conn.connectTimeout = 20_000
                 conn.readTimeout = 60_000
                 conn.instanceFollowRedirects = true

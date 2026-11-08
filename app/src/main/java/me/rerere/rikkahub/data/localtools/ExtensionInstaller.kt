@@ -112,6 +112,8 @@ class ExtensionInstaller(
      * 安装本身是重操作，串行没有明显损失。
      */
     private val installMutex = Mutex()
+    /** 预下载按包 id 加锁：不同主包依赖同一个包时，不能同时写同一个 archive。 */
+    private val downloadLocks = java.util.concurrent.ConcurrentHashMap<String, Mutex>()
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
     private val extRoot: File get() = File(context.filesDir, EXT_DIR)
@@ -187,6 +189,51 @@ class ExtensionInstaller(
             tmp.writeText(json.encodeToString(InstalledManifest.serializer(), InstalledManifest(map.values.toList())))
             if (manifestFile.exists()) manifestFile.delete()
             tmp.renameTo(manifestFile)
+        }
+    }
+
+    /**
+     * 预下载：只把包体（含依赖）下载到临时目录，不做解压/登记。
+     * 多个 prepare() 可以并发跑（下载阶段不持 installMutex），供商店队列实现
+     * 「并行下载、串行安装」。install() 检测到已下载的 archive 会跳过下载。
+     */
+    suspend fun prepare(
+        entry: ToolchainExtension,
+        onUpdate: (InstallUpdate) -> Unit = {},
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            require(entry.downloadUrl.isNotBlank()) { "扩展 ${entry.name} 缺少下载地址" }
+            if (entry.format.equals("deb", ignoreCase = true)) {
+                MobiCodeCatalog.ensureTermuxIndex(context)
+            }
+            val entries = buildList {
+                resolveDependencies(entry).forEach { add(it) }
+                add(entry)
+            }
+            entries.forEachIndexed { index, e ->
+                if (isInstalled(e.id)) return@forEachIndexed
+                val lock = downloadLocks.getOrPut(e.id) { Mutex() }
+                lock.withLock {
+                    val workDir = File(context.appTempFolder, "ext_${e.id}").apply { mkdirs() }
+                    val archive = File(workDir, if (e.format.equals("deb", true)) "archive.deb" else "archive.mcext")
+                    // 已经下载过（别的任务依赖同一个包）就跳过，避免覆盖
+                    if (archive.exists() && archive.length() > 0) return@withLock
+                    onUpdate(InstallUpdate(
+                        InstallPhase.DOWNLOADING,
+                        downloaded = 0,
+                        total = e.downloadSize,
+                        dependencyNote = "并行下载 ${index + 1}/${entries.size} ${e.name}",
+                    ))
+                    downloadWithMirrors(e.downloadUrl, archive, e.sha256) { d, t ->
+                        onUpdate(InstallUpdate(InstallPhase.DOWNLOADING, downloaded = d, total = t))
+                    }
+                }
+            }
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Result.failure(e)
         }
     }
 
@@ -269,9 +316,16 @@ class ExtensionInstaller(
         val versionDir = File(extRoot, "${entry.id}/${safeVersionDirName(entry.version)}")
 
         try {
-            // 1) 下载（镜像优先，实时进度）
-            downloadWithMirrors(entry.downloadUrl, archive, entry.sha256) { d, t ->
-                onUpdate(InstallUpdate(InstallPhase.DOWNLOADING, downloaded = d, total = t))
+            // 1) 下载（镜像优先，实时进度）。商店队列可能已经并行预下载过，
+            //    此时直接复用 archive，避免重复下载。
+            val preDownloaded = archive.exists() && archive.length() > 0 &&
+                (entry.sha256.isBlank() || sha256Of(archive).equals(entry.sha256.trim(), true))
+            if (!preDownloaded) {
+                downloadWithMirrors(entry.downloadUrl, archive, entry.sha256) { d, t ->
+                    onUpdate(InstallUpdate(InstallPhase.DOWNLOADING, downloaded = d, total = t))
+                }
+            } else {
+                onUpdate(InstallUpdate(InstallPhase.DOWNLOADING, downloaded = archive.length(), total = archive.length()))
             }
 
             // 2) 解压（实时进度）
@@ -359,18 +413,18 @@ class ExtensionInstaller(
     // ======================== 下载（镜像站优先） ========================
 
     private fun mirrorCandidates(urlStr: String): List<String> {
-        return when {
+        val fallback = when {
             urlStr.contains("github.com", ignoreCase = true) ->
                 GITHUB_MIRRORS.map { it + urlStr } + urlStr
-
             urlStr.contains("packages.termux.dev", ignoreCase = true) -> {
                 val path = urlStr.substringAfter("packages.termux.dev/apt/termux-main/", "")
                 if (path.isBlank()) listOf(urlStr)
                 else TERMUX_MIRRORS.map { it + path } + urlStr
             }
-
             else -> listOf(urlStr)
         }
+        // 用户在商店长按安装选定的路线全局生效；auto 时保持上面的多候选顺序。
+        return DownloadRoute.candidates(context, urlStr, fallback)
     }
 
     private suspend fun downloadWithMirrors(

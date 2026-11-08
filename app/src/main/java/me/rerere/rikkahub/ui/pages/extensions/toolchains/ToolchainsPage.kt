@@ -53,9 +53,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,7 +69,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Search01
+import me.rerere.rikkahub.data.localtools.DownloadRoute
 import me.rerere.rikkahub.data.localtools.InstallPhase
+import me.rerere.rikkahub.data.localtools.InstallProgress
+import me.rerere.rikkahub.data.localtools.humanSize
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 import me.rerere.rikkahub.ui.components.nav.BackButton
@@ -74,6 +81,7 @@ import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.plus
 import me.rerere.ui.toast.ToastType
 import org.koin.androidx.compose.koinViewModel
+import me.rerere.rikkahub.ui.hooks.rememberSharedPreferenceString
 
 @Composable
 fun ToolchainsPage() {
@@ -296,6 +304,7 @@ fun ToolchainsPage() {
                                 onInstall = { vm.install(item.ext) },
                                 onUninstall = { vm.uninstall(item.ext) },
                                 onCancel = { vm.cancelInstall(item.ext.id) },
+                                onRouteChanged = { vm.ensureTermuxIndex(force = true) },
                             )
                         }
                     }
@@ -389,9 +398,13 @@ private fun StoreCard(
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
     onCancel: () -> Unit,
+    onRouteChanged: () -> Unit,
 ) {
     val ext: ToolchainExtension = item.ext
     var versionMenuExpanded by remember { mutableStateOf(false) }
+    var routeMenuExpanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val currentRoute by rememberSharedPreferenceString(DownloadRoute.PREF_KEY, "auto")
     val iconColor = categoryColor(ext.category)
     // 自己进行中 = busy；其他包的安装/卸载不影响本卡片按钮
     val selfBusy = progress != null || busy
@@ -457,6 +470,11 @@ private fun StoreCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                Text(
+                    "下载路线：" + DownloadRoute.label(currentRoute ?: "auto") + "（长按安装可改）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 if (ext.id == "mobicode.tool.git") {
                     Text(
                         "⚠ 此扩展的 HTTP 操作不可用，建议安装 Termux Git",
@@ -521,14 +539,85 @@ private fun StoreCard(
                         } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {
-                                FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("更新") }
+                                RouteInstallButton(
+                                    text = "更新",
+                                    enabled = !busy,
+                                    onInstall = onInstall,
+                                    onLongClick = { routeMenuExpanded = true },
+                                )
                             }
                         } else {
-                            FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("安装") }
+                            RouteInstallButton(
+                                text = "安装",
+                                enabled = !busy,
+                                onInstall = onInstall,
+                                onLongClick = { routeMenuExpanded = true },
+                            )
                         }
+                        DownloadRouteMenu(
+                            expanded = routeMenuExpanded,
+                            currentId = currentRoute ?: "auto",
+                            onDismiss = { routeMenuExpanded = false },
+                            onSelect = { id ->
+                                DownloadRoute.set(context, id)
+                                routeMenuExpanded = false
+                                // 改路线后强制刷新一次索引，让"以后"的列表也走新路线
+                                onRouteChanged()
+                            },
+                        )
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun RouteInstallButton(
+    text: String,
+    enabled: Boolean,
+    onInstall: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    // 只监听长按：用 Initial pass 观察、不 consume，短按原样传给 Button。
+    Box(
+        modifier = Modifier.pointerInput(enabled) {
+            awaitEachGesture {
+                val down = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull() ?: return@awaitEachGesture
+                val start = down.uptimeMillis
+                // 等抬起或长按超时；期间不消费任何事件
+                var up: Long? = null
+                while (up == null) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    val change = event.changes.firstOrNull() ?: break
+                    if (!change.pressed) up = change.uptimeMillis
+                    else if (change.uptimeMillis - start >= 500L) {
+                        // 长按已识别：消费掉，避免松手时 Button 又当成一次点击去安装
+                        change.consume()
+                        if (enabled) onLongClick()
+                        break
+                    }
+                }
+            }
+        },
+    ) {
+        FilledTonalButton(onClick = onInstall, enabled = enabled) { Text(text) }
+    }
+}
+
+@Composable
+private fun DownloadRouteMenu(
+    expanded: Boolean,
+    currentId: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DownloadRoute.OPTIONS.forEach { (id, label) ->
+            DropdownMenuItem(
+                text = { Text(if (id == currentId) "✓ $label" else label) },
+                onClick = { onSelect(id) },
+            )
         }
     }
 }

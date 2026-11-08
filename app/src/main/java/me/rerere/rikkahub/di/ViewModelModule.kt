@@ -93,6 +93,7 @@ val viewModelModule = module {
             shellExecutor = get(),
             context = get(),
             appEventBus = get(),
+            queue = get(),
         )
     }
     viewModelOf(::SkillsVM)

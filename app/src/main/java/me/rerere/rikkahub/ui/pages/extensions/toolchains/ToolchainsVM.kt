@@ -3,29 +3,24 @@ package me.rerere.rikkahub.ui.pages.extensions.toolchains
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.io.File
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.event.AppEvent
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.data.localtools.ExtensionInstaller
-import me.rerere.rikkahub.data.localtools.InstallPhase
+import me.rerere.rikkahub.data.localtools.InstallProgress
 import me.rerere.rikkahub.data.localtools.InstalledRecord
 import me.rerere.rikkahub.data.localtools.MobiCodeCatalog
+import me.rerere.rikkahub.data.localtools.ToolchainInstallQueue
 import me.rerere.rikkahub.data.localtools.ShizukuHelper
 import me.rerere.rikkahub.data.localtools.ShellExecutor
-import me.rerere.common.android.appTempFolder
 import me.rerere.rikkahub.data.localtools.ToolchainExtension
 
 data class ToolchainItem(
@@ -58,47 +53,12 @@ fun compareVersions(a: String, b: String): Int {
     return 0
 }
 
-data class InstallProgress(
-    val id: String,
-    val phase: InstallPhase,
-    val downloaded: Long = 0,
-    val total: Long = 0,
-    val extracted: Int = 0,
-    val entries: Int = 0,
-    val currentEntry: String? = null,
-    val dependencyNote: String? = null,
-) {
-    val percent: Int get() = when (phase) {
-        InstallPhase.DOWNLOADING -> if (total > 0) ((downloaded * 100) / total).toInt().coerceIn(0, 100) else 0
-        InstallPhase.EXTRACTING -> if (entries > 0) ((extracted * 100) / entries).toInt().coerceIn(0, 100) else 0
-        InstallPhase.INSTALLING -> 100
-    }
-    val text: String get() = when (phase) {
-        InstallPhase.DOWNLOADING -> if (total > 0) "下载中 ${percent}%  ${humanSize(downloaded)}/${humanSize(total)}" else "下载中 ${humanSize(downloaded)}"
-        InstallPhase.EXTRACTING -> if (entries > 0) {
-            val entry = currentEntry?.let { " · " + it.take(40) } ?: ""
-            "解压中 ${percent}%  $extracted/$entries$entry"
-        } else "解压中…"
-        InstallPhase.INSTALLING -> dependencyNote ?: "安装中（赋权限/登记）…"
-    }
-}
-
-fun humanSize(bytes: Long): String {
-    if (bytes <= 0) return "0 B"
-    val kb = bytes / 1024.0; val mb = kb / 1024.0; val gb = mb / 1024.0
-    return when {
-        gb >= 1.0 -> "%.2f GB".format(gb)
-        mb >= 1.0 -> "%.1f MB".format(mb)
-        kb >= 1.0 -> "%.0f KB".format(kb)
-        else -> "$bytes B"
-    }
-}
-
 class ToolchainsVM(
     private val installer: ExtensionInstaller,
     private val shellExecutor: ShellExecutor,
     private val context: Context,
     private val appEventBus: AppEventBus,
+    private val queue: ToolchainInstallQueue,
 ) : ViewModel() {
 
     /** 内置精选扩展（16 个，直接来自 assets）。 */
@@ -114,19 +74,15 @@ class ToolchainsVM(
     private val _termuxError = MutableStateFlow<String?>(null)
     val termuxError: StateFlow<String?> = _termuxError.asStateFlow()
 
-    /** 每个扩展自己的安装/卸载进度（支持多任务：安装中别的也能装/卸载）。 */
-    private val _progress = MutableStateFlow<Map<String, InstallProgress>>(emptyMap())
-    private val _jobs = mutableMapOf<String, Job>()
-    val progress: StateFlow<Map<String, InstallProgress>> = _progress.asStateFlow()
+    // 进度与消息放在进程级队列里，退出商店页面不会中断下载；重进页面还能看到。
+    val progress: StateFlow<Map<String, InstallProgress>> = queue.progress
+    val message: StateFlow<String?> = queue.message
 
     /** 单个扩展当前进度（null = 无进行中任务）。 */
-    fun progressOf(id: String): InstallProgress? = _progress.value[id]
+    fun progressOf(id: String): InstallProgress? = queue.progress.value[id]
 
     /** 是否有任何进行中的安装/卸载。 */
-    val anyBusy: Boolean get() = _progress.value.isNotEmpty()
-
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
+    val anyBusy: Boolean get() = queue.progress.value.isNotEmpty()
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -255,76 +211,19 @@ class ToolchainsVM(
         viewModelScope.launch { delay(1500); refreshPrivilege() }
     }
 
-    /** 安装指定版本的扩展（自动安装依赖，后台队列，支持多任务）。 */
+    /** 安装指定版本：交给进程级队列，关页面也继续下载。 */
     fun install(ext: ToolchainExtension) {
-        if (_progress.value.containsKey(ext.id)) return
         val version = ext.availableVersions.firstOrNull { it.version == selectedVersion(ext) }
             ?: ext.availableVersions.first()
-        val target = ext.copy(
-            version = version.version,
-            downloadUrl = version.downloadUrl,
-            sha256 = version.sha256,
-            downloadSize = version.downloadSize,
-            format = version.format,
-        )
-        // 立即显示进度（不等网络响应）
-        _progress.update { it + (ext.id to InstallProgress(
-            id = ext.id,
-            phase = InstallPhase.DOWNLOADING,
-            downloaded = 0,
-            total = version.downloadSize,
-            dependencyNote = "准备下载…",
-        )) }
-        _jobs[ext.id] = viewModelScope.launch {
-            _message.value = null
-            val result = installer.install(target) { upd ->
-                _progress.update { it + (ext.id to InstallProgress(
-                    id = ext.id, phase = upd.phase,
-                    downloaded = upd.downloaded, total = upd.total,
-                    extracted = upd.extracted, entries = upd.entries,
-                    currentEntry = upd.currentEntry,
-                    dependencyNote = upd.dependencyNote,
-                )) }
-            }
-            _progress.update { it - ext.id }
-            _jobs.remove(ext.id)
-            _message.value = result.fold(
-                onSuccess = { "已安装 ${ext.name} ${version.version}" },
-                onFailure = { "安装失败：${it.message ?: "未知错误"}" },
-            )
-        }
+        queue.enqueueInstall(ext, version)
     }
 
-    /** 取消指定扩展的安装并删除下载缓存（默认取第一个进行中安装）。 */
-    fun cancelInstall(id: String? = null) {
-        val targetId = id ?: _progress.value.keys.firstOrNull() ?: return
-        _jobs[targetId]?.cancel()
-        _jobs.remove(targetId)
-        _progress.update { it - targetId }
-        viewModelScope.launch(Dispatchers.IO) {
-            File(context.appTempFolder, "ext_" + targetId).deleteRecursively()
-            _message.value = "已取消安装"
-        }
-    }
+    /** 取消指定扩展的安装。 */
+    fun cancelInstall(id: String? = null) = queue.cancel(id)
 
-    /** 卸载扩展（后台，支持多任务，显示进度）。 */
-    fun uninstall(ext: ToolchainExtension) {
-        if (_progress.value.containsKey(ext.id)) return
-        _progress.update { it + (ext.id to InstallProgress(
-            id = ext.id,
-            phase = InstallPhase.INSTALLING,
-            dependencyNote = "正在卸载…",
-        )) }
-        _jobs[ext.id] = viewModelScope.launch(Dispatchers.IO) {
-            val result = installer.uninstall(ext.id)
-            _progress.update { it - ext.id }
-            _jobs.remove(ext.id)
-            _message.value = result.fold(
-                onSuccess = { "已卸载 ${ext.name}" },
-                onFailure = { "卸载失败：${it.message ?: "未知错误"}" },
-            )
-        }
-    }
+    /** 卸载扩展：同样交给进程级队列。 */
+    fun uninstall(ext: ToolchainExtension) = queue.enqueueUninstall(ext)
 
-    fun clearMessage() { _message.value = null }
+    fun clearMessage() = queue.clearMessage()
+
 }

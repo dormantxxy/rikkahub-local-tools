@@ -8,6 +8,7 @@ import me.rerere.rikkahub.data.ai.tools.local.LocalTools
 import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
+import me.rerere.rikkahub.data.localtools.ToolchainInstallQueue
 import me.rerere.rikkahub.data.event.AppEventBus
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
@@ -37,6 +38,7 @@ val appModule = module {
 
     single { ExtensionInstaller(get(), get()) }
     single { ToolchainExecutor(get(), get(), get()) }
+    single { ToolchainInstallQueue(get(), get(), get()) }
     single {
         LocalTools(get(), get(), get(), get(), get(), get(), get())
     }
