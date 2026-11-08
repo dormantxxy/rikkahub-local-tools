@@ -97,7 +97,7 @@ fun ToolchainsPage() {
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val routeId by rememberSharedPreferenceString(DownloadRoute.PREF_KEY, "auto")
+    val routeId by rememberSharedPreferenceString(DownloadRoute.PREF_KEY, "auto") ?: "auto"
     val categories = MobiCodeCatalog.CATEGORIES
     val builtInIds = remember(vm.builtIn) { vm.builtIn.map { it.id }.toSet() }
 
@@ -565,7 +565,7 @@ private fun DownloadRouteButton(
     Box {
         TextButton(onClick = { expanded = true }) {
             Text(
-                "下载路线：" + DownloadRoute.label(currentId) + " ▾",
+                "下载路线：" + DownloadRoute.label(currentId ?: "auto") + " ▾",
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
