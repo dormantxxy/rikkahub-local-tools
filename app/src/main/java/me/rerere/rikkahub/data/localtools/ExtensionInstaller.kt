@@ -147,7 +147,31 @@ class ExtensionInstaller(
             .associateBy { it.id }
     }.getOrElse { emptyMap() }
 
-    private fun saveManifest(map: Map<String, InstalledRecord>) {
+    /**
+     * 写入一条安装记录。
+     *
+     * installed.json 是「读当前 map → 改 → 整体写回」，并发安装时两个协程会各自基于
+     * 旧快照写回，后写的把先写的记录覆盖掉（实测并发装 git 和 python 时丢过记录）。
+     * 这里在同一把锁内完成 读-改-写，并按 atomic rename 落盘。
+     */
+    @Synchronized
+    private fun putRecord(record: InstalledRecord) {
+        val map = _installed.value.toMutableMap()
+        map[record.id] = record
+        writeManifest(map)
+        _installed.value = map
+    }
+
+    /** 删除一条安装记录，同样在锁内读-改-写。 */
+    @Synchronized
+    private fun removeRecord(id: String) {
+        val map = _installed.value.toMutableMap()
+        map.remove(id)
+        writeManifest(map)
+        _installed.value = map
+    }
+
+    private fun writeManifest(map: Map<String, InstalledRecord>) {
         runCatching {
             extRoot.mkdirs()
             val tmp = File(extRoot, "$MANIFEST.tmp")
@@ -157,9 +181,7 @@ class ExtensionInstaller(
         }
     }
 
-    /**
-     * 安装扩展（含自动依赖安装）。
-     */
+    /** 安装扩展（含自动依赖安装）。 */
     suspend fun install(
         entry: ToolchainExtension,
         onUpdate: (InstallUpdate) -> Unit = {},
@@ -281,10 +303,7 @@ class ExtensionInstaller(
                 depends = entry.depends.map { dep -> dep.substringBefore('(').trim() }.mapNotNull { name -> MobiCodeCatalog.findTermuxPackage(context, name)?.id },
                 envVars = envVars,
             )
-            val map = _installed.value.toMutableMap()
-            map[entry.id] = record
-            saveManifest(map)
-            _installed.value = map
+            putRecord(record)
             Result.success(record)
         } catch (e: CancellationException) {
             throw e
@@ -302,15 +321,11 @@ class ExtensionInstaller(
 
     suspend fun uninstall(id: String): Result<Unit> = withContext(Dispatchers.IO) {
         runCatching {
-            val current = _installed.value
-            if (!current.containsKey(id)) return@runCatching
+            if (!_installed.value.containsKey(id)) return@runCatching
             // 保守模式：只删主包本身，不级联删依赖。
             // 原因：历史安装数据的 depends 可能缺失/不完整，级联判断会误删共享依赖（实测删过 git 的 libiconv）。
             File(extRoot, id).deleteRecursively()
-            val map = current.toMutableMap()
-            map.remove(id)
-            saveManifest(map)
-            _installed.value = map
+            removeRecord(id)
         }
     }
 
