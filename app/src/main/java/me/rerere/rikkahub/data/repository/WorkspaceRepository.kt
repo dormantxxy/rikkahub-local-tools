@@ -59,10 +59,14 @@ class WorkspaceRepository(
             // 更容易被用户手动删掉，所以这里统一重建后再统一判定状态。
             if (!dir.exists()) {
                 Log.w(TAG, "Workspace directory missing, recreating: id=${workspace.id}, root=${workspace.root}")
+                // ensureWorkspace 只调 mkdirs()，外部存储不可写时不会抛异常，
+                // 所以要复查目录是否真的建出来了，否则会误判成已恢复。
                 val recreated = runCatching {
                     manager.ensureWorkspace(workspace.root, workspace.workspaceType())
-                }.isSuccess
+                    dir.exists()
+                }.getOrDefault(false)
                 if (!recreated) {
+                    Log.w(TAG, "Workspace directory could not be recreated: id=${workspace.id}")
                     if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
                         updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
                     }
