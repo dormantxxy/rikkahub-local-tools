@@ -56,13 +56,20 @@ class WorkspaceManager(
         return baseDir
     }
 
-    /** 探针结果缓存：filesDir 在列表刷新等场景调用很频繁，不能每次都写盘探测。 */
+    /**
+     * 探针结果缓存：filesDir 在列表刷新等场景调用很频繁，不能每次都写盘探测。
+     * 可写结果长期有效；不可写只保留 1 秒——否则用户刚授予「所有文件访问」权限时，
+     * 缓存里的 false 会让工具链工作区一直回退到私有目录，直到进程重启才恢复。
+     */
     @Volatile
-    private var writableProbe: Pair<String, Boolean>? = null
+    private var writableProbe: Triple<String, Boolean, Long>? = null
 
     private fun isWritableDirCached(dir: File): Boolean {
         val key = dir.absolutePath
-        writableProbe?.let { (cachedKey, cachedResult) -> if (cachedKey == key) return cachedResult }
+        val now = System.currentTimeMillis()
+        writableProbe?.let { (cachedKey, cachedResult, cachedAt) ->
+            if (cachedKey == key && (cachedResult || now - cachedAt < 1_000L)) return cachedResult
+        }
         val result = runCatching {
             dir.mkdirs()
             val probe = File(dir, ".probe_" + System.nanoTime())
@@ -70,7 +77,7 @@ class WorkspaceManager(
             probe.delete()
             true
         }.getOrDefault(false)
-        writableProbe = key to result
+        writableProbe = Triple(key, result, now)
         return result
     }
 

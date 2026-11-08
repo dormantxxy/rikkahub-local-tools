@@ -520,6 +520,9 @@ class ExtensionInstaller(
                 val header = reader.nextHeader() ?: break
                 val path = normalizeTarPath(header.name)
                 val mapped = mapDebPath(path) ?: continue
+                // tar 里的路径可能含 ..（构造包/恶意包），必须挡在 payload 目录之外，
+                // 否则能写到任意位置。mcext 的 ZIP 分支已有同样的检查，deb 这里漏了。
+                if (mapped.split('/').any { it == ".." }) continue
                 val outFile = File(payloadDir, mapped)
                 when (header.type) {
                     TarEntryType.DIRECTORY -> outFile.mkdirs()
