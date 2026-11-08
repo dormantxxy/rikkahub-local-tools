@@ -131,6 +131,12 @@ object ToolchainEnvironment {
                 }
             }
         }
+        // Termux git 硬编码 templates 路径 /data/data/com.termux/files/usr/share/git-core/templates，
+        // 在 RikkaHub 里不存在，每次 git 操作都会 warning。指向一个存在的空目录即可消除。
+        if (envVars["GIT_TEMPLATE_DIR"].isNullOrBlank()) {
+            envVars["GIT_TEMPLATE_DIR"] = File(base, ".tmp/git-templates").apply { mkdirs() }.absolutePath
+        }
+
         // 优先使用 ca-certificates 的证书（即使其他扩展自带 cert，也用它保证 HTTPS 兼容）
         val caCert = File(context.filesDir, "extensions/termux.ca.certificates")
             .listFiles()?.asSequence()

@@ -103,11 +103,13 @@ internal fun searchFiles(
     // 限制扫描文件数，到顶就停并说明，避免工具长时间无响应。
     val maxScanFiles = 20_000
     var scanLimitHit = false
+    var skippedLarge = 0
     try {
         for (file in root.walkTopDown().onEnter { shouldEnter(it) }) {
             if (results.size >= maxResults) break
             if (scanned >= maxScanFiles) { scanLimitHit = true; break }
-            if (!file.isFile || file.length() > maxFileSize) continue
+            if (!file.isFile) continue
+            if (file.length() > maxFileSize) { skippedLarge++; continue }
             if (includeRegex != null && !includeRegex.matches(file.name)) continue
             if (!isLikelyTextFile(file)) continue
             scanned++
@@ -128,12 +130,13 @@ internal fun searchFiles(
     }
     val body = if (results.isEmpty()) "未找到匹配（扫描 $scanned 个文件）" else results.joinToString("\n")
     // 达到上限要明说，否则模型会把"只看到前 N 条"当成"一共只有 N 条"
+    val largeNote = if (skippedLarge > 0) "\n[skipped $skippedLarge file(s) larger than 2MB]" else ""
     return when {
         results.size >= maxResults ->
             "$body\n[truncated: reached max_results=$maxResults, there may be more matches]"
         scanLimitHit ->
-            "$body\n[truncated: stopped after scanning $maxScanFiles files, narrow the path or use include]"
-        else -> body
+            "$body\n[truncated: stopped after scanning $maxScanFiles files, narrow the path or use include]$largeNote"
+        else -> body + largeNote
     }
 }
 
