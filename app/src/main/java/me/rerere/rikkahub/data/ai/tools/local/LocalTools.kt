@@ -134,6 +134,9 @@ class LocalTools(
         val dir = workingDir?.takeIf { it.isNotBlank() } ?: rikkahubWorkDir
         // 目录在首次使用时可能不存在（例如新绑定工作区、临时工作区被用户删除），这里补建
         runCatching { java.io.File(dir).mkdirs() }
+        // 权限状态只取一次：isShizukuGranted 走 Binder，重复调用既浪费，也可能让同一次请求里
+        // 前几个工具暴露、后几个不暴露（授权状态刚好在此期间变化），工具集自相矛盾。
+        val privileged = toolchainExecutor.hasPrivilege()
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
@@ -147,7 +150,7 @@ class LocalTools(
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
         // run_shell（设备命令）依赖 root/Shizuku：无权限时不暴露
-        if (options.contains(LocalToolOption.Shell) && toolchainExecutor.hasPrivilege()) {
+        if (options.contains(LocalToolOption.Shell) && privileged) {
             val shellTool = buildRunShellTool(shellExecutor, dir, toolchainExecutor, extensionInstaller)
             // 设备 Shell 审批开关：关闭时完全不拦截（包括风险命令）；开启时仅风险命令需要审批
             tools.add(
@@ -163,25 +166,25 @@ class LocalTools(
         if (options.contains(LocalToolOption.FileTree)) tools.add(buildFileTreeTool(shellExecutor, dir))
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
         // run_cli 依赖 root/Shizuku：读 App 启动时缓存的权限状态（轻量，不启动 su）
-        if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) {
+        if (options.contains(LocalToolOption.Cli) && privileged) {
             tools.add(buildRunCliTool(toolchainExecutor, dir))
         }
         // 工具链增强（env_info/pkg_search/pkg_install）依赖 root/Shizuku：无权限时不暴露
-        if (options.contains(LocalToolOption.Toolchain) && toolchainExecutor.hasPrivilege()) {
+        if (options.contains(LocalToolOption.Toolchain) && privileged) {
             tools.add(buildEnvInfoTool(context, toolchainExecutor, extensionInstaller, dir))
             tools.add(pkgSearchTool)
             tools.add(pkgInstallTool)
         }
         // UI 自动化 / 截屏 / logcat 依赖 root 或 Shizuku：无权限时不暴露给 AI
-        if (options.contains(LocalToolOption.UiAutomation) && toolchainExecutor.hasPrivilege()) {
+        if (options.contains(LocalToolOption.UiAutomation) && privileged) {
             tools.add(tapTool)
             tools.add(swipeTool)
             tools.add(inputTextTool)
             tools.add(uiDumpTool)
         }
-        if (options.contains(LocalToolOption.Screenshot) && toolchainExecutor.hasPrivilege()) tools.add(screenshotTool)
-        if (options.contains(LocalToolOption.Logcat) && toolchainExecutor.hasPrivilege()) tools.add(logcatTool)
-        if (options.contains(LocalToolOption.AppManager) && toolchainExecutor.hasPrivilege()) tools.add(appManagerTool)
+        if (options.contains(LocalToolOption.Screenshot) && privileged) tools.add(screenshotTool)
+        if (options.contains(LocalToolOption.Logcat) && privileged) tools.add(logcatTool)
+        if (options.contains(LocalToolOption.AppManager) && privileged) tools.add(appManagerTool)
         return tools
     }
 }
