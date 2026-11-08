@@ -35,7 +35,10 @@ object ToolchainEnvironment {
      * HOME / TMPDIR / GOTMPDIR / GOCACHE / GOMODCACHE / CARGO_HOME /
      * MOBICODE_PROJECT_ROOT / MOBICODE_EXEC_DIR / GIT_CONFIG_NOSYSTEM / GIT_CONFIG_GLOBAL。
      */
-    fun baseEnvVars(context: Context): Map<String, String> {
+    fun baseEnvVars(
+        context: Context,
+        projectRoot: String? = null,
+    ): Map<String, String> {
         val base = workDir(context)
         val home = File(base, ".home").apply { mkdirs() }
         val tmp = File(base, ".tmp").apply { mkdirs() }
@@ -55,14 +58,18 @@ object ToolchainEnvironment {
             "GOCACHE" to sub("go-cache"),
             "GOMODCACHE" to sub("go-mod-cache"),
             "CARGO_HOME" to sub("cargo-home"),
-            "MOBICODE_PROJECT_ROOT" to base.absolutePath,
-            "MOBICODE_EXEC_DIR" to base.absolutePath,
+            "MOBICODE_PROJECT_ROOT" to (projectRoot ?: base.absolutePath),
+            "MOBICODE_EXEC_DIR" to (projectRoot ?: base.absolutePath),
             "GIT_CONFIG_NOSYSTEM" to "1",
             "GIT_CONFIG_GLOBAL" to gitConfig.absolutePath,
         )
     }
 
-    fun build(context: Context, installer: ExtensionInstaller): ToolchainEnv {
+    fun build(
+        context: Context,
+        installer: ExtensionInstaller,
+        projectRoot: String? = null,
+    ): ToolchainEnv {
         val base = workDir(context)
         val home = File(base, ".home").apply { mkdirs() }
         val tmp = File(base, ".tmp").apply { mkdirs() }
@@ -97,7 +104,7 @@ object ToolchainEnvironment {
 
         // 最终环境变量 = 基础 10 个 + 全局聚合 + 各扩展的独立变量
         val envVars = LinkedHashMap<String, String>()
-        envVars.putAll(baseEnvVars(context))
+        envVars.putAll(baseEnvVars(context, projectRoot))
         envVars["PATH"] = (binDirs + HOST_PATH).joinToString(":")
         if (libDirs.isNotEmpty()) {
             envVars["LD_LIBRARY_PATH"] = libDirs.joinToString(":")

@@ -14,14 +14,15 @@ class ToolchainExecutor(
     fun hasPrivilege(): Boolean = shellExecutor.isRootAvailable() || shellExecutor.isShizukuGranted()
     fun hasToolchains(): Boolean = installer.installed.value.isNotEmpty()
 
-    fun currentEnv(): ToolchainEnv = ToolchainEnvironment.build(context, installer)
+    fun currentEnv(projectRoot: String? = null): ToolchainEnv =
+        ToolchainEnvironment.build(context, installer, projectRoot)
 
     suspend fun run(
         command: String,
         cwd: String? = null,
         timeoutMillis: Long = 60_000,
     ): ShellResult {
-        val env = currentEnv()
+        val env = currentEnv(projectRoot = cwd)
         return shellExecutor.executeToolchain(command, cwd, timeoutMillis, env)
     }
 }

@@ -25,9 +25,10 @@ internal fun buildEnvInfoTool(
     description = "查看原生工具链环境：工作目录、PATH、LD_LIBRARY_PATH、已安装扩展列表与权限状态。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
-        val env = executor.currentEnv()
+        val env = executor.currentEnv(projectRoot = defaultDir)
         val payload = buildJsonObject {
             put("workDir", defaultDir?.takeIf { it.isNotBlank() } ?: env.workDir)
+            put("projectRoot", env.envVars["MOBICODE_PROJECT_ROOT"] ?: env.workDir)
             put("path", env.path)
             put("ldLibraryPath", env.ldLibraryPath)
             put("hasPrivilege", executor.hasPrivilege())
