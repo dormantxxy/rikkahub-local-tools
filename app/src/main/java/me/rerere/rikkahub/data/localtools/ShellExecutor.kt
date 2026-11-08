@@ -125,7 +125,7 @@ class ShellExecutor(
         val mode = privilegedMode()
             ?: return ShellResult(-1, "", "需要 root 或 Shizuku 权限才能直跑原生工具链（当前都不可用）")
         val script = buildString {
-            if (!cwd.isNullOrBlank()) append("cd ").append(cwd.shellQuote()).append(" && ")
+            // 先导出环境变量：后面 cd 失败时要回退到 env.workDir，那时必须已有 HOME/PATH
             if (env.envVars.isNotEmpty()) {
                 // 导出完整环境变量：基础 10 个（MobiCode RUNTIME_VARIABLE_ORDER）+ 每个扩展安装时保存的变量
                 env.envVars.forEach { (k, v) ->
@@ -138,6 +138,14 @@ class ShellExecutor(
                 append("export TMPDIR=").append(env.tmp.shellQuote()).append("; ")
             }
             append("export LANG=en_US.UTF-8; ")
+            if (!cwd.isNullOrBlank()) {
+                // cwd 可能已被删除（用户清理工作区、切换绑定后旧的子目录消失）。
+                // 用 || 兜底而不是 &&，否则 cd 失败会让后面整条命令静默不执行，
+                // 模型只看到一个失败的 exit code，查不出原因。
+                append("cd ").append(cwd.shellQuote())
+                append(" || cd ").append(env.workDir.shellQuote())
+                append(" || cd /; ")
+            }
             append(command)
         }
         return withContext(Dispatchers.IO) {
@@ -165,7 +173,12 @@ class ShellExecutor(
 
     private fun startNormal(command: String, cwd: String?): Process {
         val b = ProcessBuilder("/system/bin/sh", "-c", command)
-        if (!cwd.isNullOrBlank()) b.directory(File(cwd))
+        // 目录可能已被删除：ProcessBuilder 的 directory 指向不存在的路径会直接抛 IOException，
+        // 这里先确认存在再设置，否则整条命令连尝试的机会都没有。
+        if (!cwd.isNullOrBlank()) {
+            val dir = File(cwd)
+            if (dir.isDirectory) b.directory(dir)
+        }
         b.environment()["PATH"] = HOST_PATH
         val p = b.start(); runCatching { p.outputStream.close() }; return p
     }
@@ -177,7 +190,8 @@ class ShellExecutor(
         val full = buildString {
             append("nsenter -t 1 -m -- sh -c ")
             append((buildString {
-                if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" && ") }
+                // cwd 可能已被删除：用 || 兜底，避免 cd 失败后整条命令静默不执行
+                if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" || cd /; ") }
                 append(command)
             }).shellQuote())
         }
