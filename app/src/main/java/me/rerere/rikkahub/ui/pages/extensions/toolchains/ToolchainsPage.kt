@@ -248,7 +248,7 @@ fun ToolchainsPage() {
             ) {
                 PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
                 DownloadRouteButton(
-                    currentId = routeIdState.value,
+                    currentId = currentRoute,
                     onSelect = { id ->
                         DownloadRoute.set(context, id)
                         vm.ensureTermuxIndex(force = true)
@@ -566,7 +566,7 @@ private fun DownloadRouteButton(
     Box {
         TextButton(onClick = { expanded = true }) {
             Text(
-                "下载路线：" + DownloadRoute.label(currentRoute) + " ▾",
+                "下载路线：" + DownloadRoute.label(currentId) + " ▾",
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
