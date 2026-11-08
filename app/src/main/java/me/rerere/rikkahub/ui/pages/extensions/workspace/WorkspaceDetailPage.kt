@@ -423,10 +423,24 @@ private fun WorkspaceBasicPage(
     onEditSsh: () -> Unit,
 ) {
     val shellStatus = workspace?.shellStatus
+    // 工具链工作区依赖 root/Shizuku：无权限时按「禁用」展示，与工作区列表保持一致
+    val toolchainExecutor: me.rerere.rikkahub.data.localtools.ToolchainExecutor = org.koin.compose.koinInject()
+    val shizukuGranted by me.rerere.rikkahub.data.localtools.ShizukuHelper.permissionGranted.collectAsStateWithLifecycle()
+    val privilegeAvailable by androidx.compose.runtime.produceState(initialValue = true, shizukuGranted) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { toolchainExecutor.hasPrivilege() }
+    }
+    val isToolchainWorkspace = workspace?.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN
+    // 工具链工作区没有 Rootfs，但同样要展示 shell 状态（就绪/禁用）
+    val effectiveShellStatus = if (isToolchainWorkspace && !privilegeAvailable) {
+        WorkspaceShellStatus.DISABLED.name
+    } else {
+        shellStatus
+    }
     // 加载完成前按本地工作区展示
     val hasRootfs = workspace?.capabilities()?.rootfs ?: true
-    val installing = installProgress != null || shellStatus == WorkspaceShellStatus.INSTALLING.name
-    val rootfsReady = shellStatus == WorkspaceShellStatus.READY.name
+    val showShellStatus = hasRootfs || isToolchainWorkspace
+    val installing = installProgress != null || effectiveShellStatus == WorkspaceShellStatus.INSTALLING.name
+    val rootfsReady = effectiveShellStatus == WorkspaceShellStatus.READY.name
     val installButtonText = when {
         installing -> stringResource(R.string.workspace_detail_installing)
         rootfsReady -> stringResource(R.string.workspace_detail_reinstall_rootfs)
@@ -449,11 +463,11 @@ private fun WorkspaceBasicPage(
                     },
                     leadingContent = { CardGroupIcon(HugeIcons.Tag01) },
                 )
-                if (hasRootfs) {
+                if (showShellStatus) {
                     item(
                         headlineContent = { Text(stringResource(R.string.workspace_detail_shell_status)) },
                         leadingContent = { CardGroupIcon(HugeIcons.ComputerTerminal01) },
-                        trailingContent = { ShellStatusBadge(shellStatus) },
+                        trailingContent = { ShellStatusBadge(effectiveShellStatus) },
                     )
                 }
             }
