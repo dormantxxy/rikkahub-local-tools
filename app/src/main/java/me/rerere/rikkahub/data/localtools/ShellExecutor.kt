@@ -102,12 +102,28 @@ class ShellExecutor(
         stdin: ByteArray? = null,
     ): ShellResult = withContext(Dispatchers.IO) {
         if (mode == ShellMode.SHIZUKU) {
-            val r = ShizukuShellManager.exec(
-                command = command,
-                cwd = cwd,
-                timeoutSeconds = (timeoutMillis / 1000).toInt().coerceAtLeast(1),
-            )
-            return@withContext ShellResult(r.exitCode, r.stdout, r.stderr, r.timedOut)
+            // Shizuku 通道（AIDL）没有 stdin 通道，大内容只能中转：
+            // 先落到 App 私有缓存，再让远端命令从文件读，最后删掉。
+            var tmpFile: File? = null
+            val effectiveCommand = if (stdin != null) {
+                val f = File(context.cacheDir, "stdin_${System.nanoTime()}.b64")
+                runCatching { f.writeBytes(stdin) }.getOrElse { e ->
+                    return@withContext ShellResult(-1, "", "写入临时文件失败：${e.message ?: e.toString()}")
+                }
+                tmpFile = f
+                // 把命令里的 stdin 读取改成从文件读
+                "cat ${f.absolutePath.shellQuote()} | ( $command )"
+            } else command
+            try {
+                val r = ShizukuShellManager.exec(
+                    command = effectiveCommand,
+                    cwd = cwd,
+                    timeoutSeconds = (timeoutMillis / 1000).toInt().coerceAtLeast(1),
+                )
+                return@withContext ShellResult(r.exitCode, r.stdout, r.stderr, r.timedOut)
+            } finally {
+                tmpFile?.let { runCatching { it.delete() } }
+            }
         }
         val process = try {
             when (mode) {
