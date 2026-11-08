@@ -140,9 +140,9 @@ class ToolchainInstallQueue(
     @Synchronized
     private fun pump() {
         if (installing != null) return
-        val task = installPending.removeFirstOrNull()
+        val task = installPending.pollFirst()
         if (task == null) {
-            val u = uninstallPending.removeFirstOrNull() ?: return
+            val u = uninstallPending.pollFirst() ?: return
             startUninstall(u.first, u.second)
             return
         }
