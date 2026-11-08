@@ -135,9 +135,9 @@ class ShellExecutor(
             // 先落到 App 私有缓存，再让远端命令从文件读，最后删掉。
             var tmpFile: File? = null
             val effectiveCommand = if (stdin != null) {
-                // 中转文件必须放在 Shizuku 服务进程（不同 uid）也能读的位置。
-                // App cacheDir 对 shell uid 是 --x，root 可读但不保证；/data/local/tmp 全局可读。
-                val f = File("/data/local/tmp", "rk_stdin_${System.nanoTime()}.b64")
+                // 中转文件放在 App 自己的 cacheDir：App 有写权限，Shizuku 服务是 root 也能读。
+                // 不能放 /data/local/tmp——App 普通权限写那里会 EACCES（实测）。
+                val f = File(context.cacheDir, "stdin_${System.nanoTime()}.b64")
                 runCatching { f.writeBytes(stdin) }.getOrElse { e ->
                     return@withContext ShellResult(-1, "", "写入临时文件失败：${e.message ?: e.toString()}")
                 }

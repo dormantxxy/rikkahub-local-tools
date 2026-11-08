@@ -28,8 +28,13 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         const val KEY_TIMED_OUT = "timedOut"
         const val EXIT_INVALID = -1
         const val EXIT_TIMEOUT = 124
-        /** 与 ShellExecutor 的 2MB 上限一致；128KB 太小且当时没有截断提示。 */
-        private const val MAX_OUTPUT_CHARS = 2 * 1024 * 1024
+        /**
+         * 单个流最多保留的字符数。AIDL 的 Bundle 走 Binder 事务，整个 Bundle 超过约 1MB
+         * 就会 "Transaction failed on small parcel"（实测 2MB 直接把服务打挂）。
+         * 两个流分离后各 128KB，合计最多 256KB，留出足够余量。超出部分继续读但不保存，
+         * 否则子进程写满管道会阻塞；并在内容里写明已截断。
+         */
+        private const val MAX_OUTPUT_CHARS = 128 * 1024
         private const val DRAIN_JOIN_MILLIS = 5_000L
     }
 
