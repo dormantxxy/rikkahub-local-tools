@@ -38,6 +38,11 @@ internal fun buildWebFetchTool(): Tool = Tool(
     execute = {
         val p = it.jsonObject
         val url = p["url"]?.jsonPrimitive?.contentOrNull ?: error("url is required")
+        // 只允许 http(s)：file:// / ftp:// 会在 `as HttpURLConnection` 处抛 ClassCastException，
+        // 报错信息对模型毫无意义，直接给出明确拒绝。
+        require(url.startsWith("http://", true) || url.startsWith("https://", true)) {
+            "url 必须以 http:// 或 https:// 开头"
+        }
         val maxChars = (p["max_chars"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 8000).coerceIn(200, 200_000)
         val includeLinks = p["include_links"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
         val raw = p["raw"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false

@@ -119,14 +119,14 @@ private fun AssistantLocalToolContent(
         LocalToolOption.AppManager,
     )
     androidx.compose.runtime.LaunchedEffect(hasPrivilege) {
-        var updated = assistant.localTools
+        // 只做「无权限时剔除需要 root/Shizuku 的工具」。
+        // 不能在「有权限」时自动补回 Cli：那样用户手动关掉后每次进页面都会被重新打开，
+        // 等于关不掉。新助手默认就带 Cli，不需要自动补。
         if (!hasPrivilege) {
-            updated = updated.filterNot { it in privilegedTools }
-        } else if (!updated.contains(LocalToolOption.Cli)) {
-            updated = updated + LocalToolOption.Cli
-        }
-        if (updated != assistant.localTools) {
-            onUpdate(assistant.copy(localTools = updated))
+            val updated = assistant.localTools.filterNot { it in privilegedTools }
+            if (updated != assistant.localTools) {
+                onUpdate(assistant.copy(localTools = updated))
+            }
         }
     }
     val permissionRequiredText =

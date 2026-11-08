@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -267,25 +268,25 @@ class ToolchainsVM(
             format = version.format,
         )
         // 立即显示进度（不等网络响应）
-        _progress.value = _progress.value + (ext.id to InstallProgress(
+        _progress.update { it + (ext.id to InstallProgress(
             id = ext.id,
             phase = InstallPhase.DOWNLOADING,
             downloaded = 0,
             total = version.downloadSize,
             dependencyNote = "准备下载…",
-        ))
+        )) }
         _jobs[ext.id] = viewModelScope.launch {
             _message.value = null
             val result = installer.install(target) { upd ->
-                _progress.value = _progress.value + (ext.id to InstallProgress(
+                _progress.update { it + (ext.id to InstallProgress(
                     id = ext.id, phase = upd.phase,
                     downloaded = upd.downloaded, total = upd.total,
                     extracted = upd.extracted, entries = upd.entries,
                     currentEntry = upd.currentEntry,
                     dependencyNote = upd.dependencyNote,
-                ))
+                )) }
             }
-            _progress.value = _progress.value - ext.id
+            _progress.update { it - ext.id }
             _jobs.remove(ext.id)
             _message.value = result.fold(
                 onSuccess = { "已安装 ${ext.name} ${version.version}" },
@@ -299,7 +300,7 @@ class ToolchainsVM(
         val targetId = id ?: _progress.value.keys.firstOrNull() ?: return
         _jobs[targetId]?.cancel()
         _jobs.remove(targetId)
-        _progress.value = _progress.value - targetId
+        _progress.update { it - targetId }
         viewModelScope.launch(Dispatchers.IO) {
             File(context.appTempFolder, "ext_" + targetId).deleteRecursively()
             _message.value = "已取消安装"
@@ -309,14 +310,14 @@ class ToolchainsVM(
     /** 卸载扩展（后台，支持多任务，显示进度）。 */
     fun uninstall(ext: ToolchainExtension) {
         if (_progress.value.containsKey(ext.id)) return
-        _progress.value = _progress.value + (ext.id to InstallProgress(
+        _progress.update { it + (ext.id to InstallProgress(
             id = ext.id,
             phase = InstallPhase.INSTALLING,
             dependencyNote = "正在卸载…",
-        ))
+        )) }
         _jobs[ext.id] = viewModelScope.launch(Dispatchers.IO) {
             val result = installer.uninstall(ext.id)
-            _progress.value = _progress.value - ext.id
+            _progress.update { it - ext.id }
             _jobs.remove(ext.id)
             _message.value = result.fold(
                 onSuccess = { "已卸载 ${ext.name}" },

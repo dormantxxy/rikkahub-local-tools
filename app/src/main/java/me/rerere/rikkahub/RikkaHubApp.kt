@@ -209,12 +209,13 @@ class RikkaHubApp : Application() {
             runCatching {
                 val dir = appTempFolder
                 if (dir.exists()) {
-                    // 只清理 App 自己生成的临时文件，避免误删用户放在公共 tmp 里的东西
+                    // 只清理 App 自己生成的临时文件，避免误删用户放在公共 tmp 里的东西。
+                    // 前缀必须覆盖全部来源：ext_（扩展安装）、crop_output_（裁剪）、
+                    // imggen_（图片生成，含 imggen_ref_）、tts_、chat-export-（聊天导出），
+                    // 漏一个就会在公共 tmp 里永久堆积。
+                    val tempPrefixes = listOf("ext_", "crop_output_", "imggen_", "tts_", "chat-export-")
                     dir.listFiles()?.forEach { f ->
-                        val n = f.name
-                        if (n.startsWith("ext_") || n.startsWith("crop_output_") ||
-                            n.startsWith("imggen_ref_") || n.startsWith("tts_")
-                        ) {
+                        if (tempPrefixes.any { f.name.startsWith(it) }) {
                             f.deleteRecursively()
                         }
                     }
