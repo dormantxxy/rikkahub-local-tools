@@ -111,20 +111,28 @@ class ShellExecutor(
         }
         val process = try {
             when (mode) {
-                ShellMode.NORMAL -> startNormal(command, cwd)
-                ShellMode.ROOT -> startRoot(command, cwd)
+                ShellMode.NORMAL -> startNormal(command, cwd, keepStdinOpen = stdin != null)
+                ShellMode.ROOT -> startRoot(command, cwd, keepStdinOpen = stdin != null)
                 ShellMode.SHIZUKU -> error("unreachable")
             }
         } catch (e: Throwable) {
             return@withContext ShellResult(-1, "", e.message ?: "执行失败")
         }
         if (stdin != null) {
-            runCatching {
+            // 写入失败（进程提前退出、管道断开）必须让整个调用失败，
+            // 否则调用方会拿到「成功」而文件内容其实是残缺的。
+            try {
                 withContext(Dispatchers.IO) {
                     process.outputStream.write(stdin)
                     process.outputStream.flush()
                     process.outputStream.close()
                 }
+            } catch (e: CancellationException) {
+                runCatching { process.destroyForcibly() }
+                throw e
+            } catch (e: Throwable) {
+                runCatching { process.destroyForcibly() }
+                return@withContext ShellResult(-1, "", "写入标准输入失败：${e.message ?: e.toString()}")
             }
         }
         awaitProcess(process, timeoutMillis)
@@ -186,7 +194,7 @@ class ShellExecutor(
         }
     }
 
-    private fun startNormal(command: String, cwd: String?): Process {
+    private fun startNormal(command: String, cwd: String?, keepStdinOpen: Boolean = false): Process {
         val b = ProcessBuilder("/system/bin/sh", "-c", command)
         // 目录可能已被删除：ProcessBuilder 的 directory 指向不存在的路径会直接抛 IOException，
         // 这里先确认存在再设置，否则整条命令连尝试的机会都没有。
@@ -195,10 +203,13 @@ class ShellExecutor(
             if (dir.isDirectory) b.directory(dir)
         }
         b.environment()["PATH"] = HOST_PATH
-        val p = b.start(); runCatching { p.outputStream.close() }; return p
+        val p = b.start()
+        // 需要往 stdin 写数据时必须保持管道打开，否则写入立刻失败
+        if (!keepStdinOpen) runCatching { p.outputStream.close() }
+        return p
     }
 
-    private fun startRoot(command: String, cwd: String?): Process {
+    private fun startRoot(command: String, cwd: String?, keepStdinOpen: Boolean = false): Process {
         // Magisk su 的挂载命名空间与 init 不同（/data/data 只见自己），
         // 用 nsenter 进入 init(pid 1) 的 mnt 命名空间恢复完整可见性（与 ShizukuShellService 一致）。
         // 实测：su -c "nsenter -t 1 -m -- sh -c ..." 能看到全部 329 个 /data/data 目录。
@@ -216,7 +227,8 @@ class ShellExecutor(
         }
         // 绝对路径：避免 termux.tools 等扩展在 PATH 里放置的假 su 劫持
         val p = Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c", full))
-        runCatching { p.outputStream.close() }; return p
+        if (!keepStdinOpen) runCatching { p.outputStream.close() }
+        return p
     }
 
 
