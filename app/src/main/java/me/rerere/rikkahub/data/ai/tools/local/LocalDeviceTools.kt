@@ -16,8 +16,6 @@ import me.rerere.rikkahub.data.localtools.ShellResult
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
 
-/** 单次写入的分块大小：base64 后约 80KB，留足内核单个 argv 的上限余量。 */
-private const val WRITE_CHUNK_BYTES = 60 * 1024
 
 /**
  * 已装扩展提供的全部命令名（含扩展自带的库工具）。
@@ -136,43 +134,29 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("action", action); put("mode", "kotlin"); put("exit_code", 0); put("output", output.take(80_000))
             }.toString()))
+        } else if (action == "write") {
+            // 内容一律走 stdin：su -c / sh -c 的单个参数上限只有 128KB，
+            // 把 base64 拼进命令行写大文件必然 Argument list too long。
+            // 命令本身保持常量长度，与文件大小无关。
+            val pth = path ?: error("path is required for write")
+            val bytes = (content ?: "").toByteArray(Charsets.UTF_8)
+            val parent = pth.substringBeforeLast('/', "")
+            val mkdir = if (parent.isNotBlank()) "mkdir -p ${parent.shellQuote()}; " else ""
+            val cmd = "${mkdir}base64 -d > ${pth.shellQuote()} 2>/dev/null && echo WROTE_OK || { echo WRITE_FAILED; false; }"
+            val r = executor.execute(
+                cmd,
+                timeoutMillis = 120_000,
+                mode = mode,
+                stdin = Base64.encodeToString(bytes, Base64.NO_WRAP).toByteArray(Charsets.UTF_8),
+            )
+            listOf(UIMessagePart.Text(buildJsonObject {
+                put("action", action); put("mode", mode.name.lowercase()); put("exit_code", r.exitCode)
+                put("output", r.output.take(80_000))
+            }.toString()))
         } else {
         val cmd: String = when (action) {
             "list" -> "ls -la ${(path ?: error("path is required for list")).shellQuote()} 2>&1"
             "read" -> "cat ${(path ?: error("path is required for read")).shellQuote()} 2>&1 | head -c 60000"
-            "write" -> {
-                val pth = path ?: error("path is required for write")
-                val bytes = (content ?: "").toByteArray(Charsets.UTF_8)
-                val parent = pth.substringBeforeLast('/', "")
-                val mkdir = if (parent.isNotBlank()) "mkdir -p ${parent.shellQuote()}; " else ""
-                // 单个命令行参数有内核上限（约 128KB），大文件必须分块追加，
-                // 否则 base64 后的内容会触发 "Argument list too long" 而写入失败。
-                val chunks = (0 until bytes.size step WRITE_CHUNK_BYTES).map { start ->
-                    val end = minOf(start + WRITE_CHUNK_BYTES, bytes.size)
-                    Base64.encodeToString(bytes.copyOfRange(start, end), Base64.NO_WRAP)
-                }
-                if (chunks.isEmpty()) {
-                    "${mkdir}( : > ${pth.shellQuote()} ) 2>/dev/null && echo WROTE_OK || { echo WRITE_FAILED; false; }"
-                } else {
-                    buildString {
-                        append(mkdir)
-                        // 两处坑：
-                        // 1) 重定向失败会让 sh 直接中止整条脚本（连后面的 echo 都不执行），
-                        //    所以每段都包在子 shell 里：( … ) 2>/dev/null || ok=0。
-                        // 2) 以前用 ; 串起来，第一步失败后 echo WROTE_OK 照样执行，
-                        //    模型会误以为文件已写好。
-                        append("ok=1; ")
-                        append("( : > ${pth.shellQuote()} ) 2>/dev/null || ok=0; ")
-                        chunks.forEachIndexed { index, b64 ->
-                            val redirect = if (index == 0) ">" else ">>"
-                            append("if [ \$ok -eq 1 ]; then ")
-                            append("( printf '%s' ${b64.shellQuote()} | base64 -d $redirect ${pth.shellQuote()} ) 2>/dev/null || ok=0; ")
-                            append("fi; ")
-                        }
-                        append("if [ \$ok -eq 1 ]; then echo WROTE_OK; else echo WRITE_FAILED; false; fi")
-                    }
-                }
-                }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED"
             "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK"
             "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED"

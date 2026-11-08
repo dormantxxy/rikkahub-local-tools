@@ -94,6 +94,12 @@ class ShellExecutor(
         cwd: String? = null,
         timeoutMillis: Long = 60_000,
         mode: ShellMode = ShellMode.NORMAL,
+        /**
+         * 注入到进程标准输入的数据（可选）。
+         * 大文件内容必须走这里：su -c / sh -c 的单个参数上限只有 128KB，
+         * 把 base64 内容拼进命令行会直接 Argument list too long。
+         */
+        stdin: ByteArray? = null,
     ): ShellResult = withContext(Dispatchers.IO) {
         if (mode == ShellMode.SHIZUKU) {
             val r = ShizukuShellManager.exec(
@@ -111,6 +117,15 @@ class ShellExecutor(
             }
         } catch (e: Throwable) {
             return@withContext ShellResult(-1, "", e.message ?: "执行失败")
+        }
+        if (stdin != null) {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    process.outputStream.write(stdin)
+                    process.outputStream.flush()
+                    process.outputStream.close()
+                }
+            }
         }
         awaitProcess(process, timeoutMillis)
     }
