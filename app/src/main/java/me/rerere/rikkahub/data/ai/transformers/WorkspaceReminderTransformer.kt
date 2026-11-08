@@ -46,7 +46,13 @@ class WorkspaceReminderTransformer(
         val layout = workspaceRepository.layout(workspaceId) ?: return messages
 
         val prompt = if (workspace.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN) {
-            buildToolchainWorkspacePrompt(workspace, layout, ctx.workspaceCwd, localTools.installedCommandNames())
+            buildToolchainWorkspacePrompt(
+                workspace = workspace,
+                layout = layout,
+                cwd = ctx.workspaceCwd,
+                commands = localTools.installedCommandNames(),
+                hasPrivilege = localTools.hasDevicePrivilege(),
+            )
         } else if (workspace.isSsh()) {
             val environment = remoteEnvironments.get(workspaceId, workspace.sshConfig) {
                 // shell 探测需要连接, 失败时不再读发行版, 以免再等一次超时
@@ -135,16 +141,22 @@ class WorkspaceReminderTransformer(
     /** 未绑定工作区时的提示：设备级工具在宿主机上直接工作，没有 Rootfs 挂载。 */
     private fun buildStandalonePrompt(): String = buildString {
         val dir = localTools.fallbackWorkingDir()
+        val hasPrivilege = localTools.hasDevicePrivilege()
         appendLine("<workspace>")
         appendLine("No workspace is bound. You are working directly on the Android host, not inside a proot rootfs.")
-        appendLine("- Default directory for run_shell / run_cli / manage_files / search_code / file_tree is \"" + dir + "\".")
-        appendLine("- Use absolute host paths. This is a temporary area; the user can see and clean it.")
+        appendLine("- Default directory is \"" + dir + "\". Use absolute host paths. This is a temporary area; the user can see and clean it.")
         appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount here.")
-        val commands = localTools.installedCommandNames()
-        if (commands.isNotEmpty()) {
-            appendLine("- Commands provided by installed extensions (run them with run_cli, which uses the aggregated PATH/LD_LIBRARY_PATH): " + commands.take(60).joinToString(", ") + ".")
+        if (hasPrivilege) {
+            val commands = localTools.installedCommandNames()
+            if (commands.isNotEmpty()) {
+                appendLine("- Commands provided by installed extensions (run them with run_cli, which uses the aggregated PATH/LD_LIBRARY_PATH): " + commands.take(60).joinToString(", ") + ".")
+            }
+            appendLine("- Available tools: run_shell (system commands: pm, am, dumpsys, ls, cat), run_cli (extension binaries), manage_files, search_code, file_tree, web_fetch.")
+        } else {
+            // 无 root/Shizuku 时 run_shell / run_cli / env_info 不会暴露，必须如实说明
+            appendLine("- This device currently has NO root or Shizuku permission, so command execution tools are unavailable: there is no run_shell, run_cli or env_info.")
+            appendLine("- Available tools: manage_files, search_code, file_tree, web_fetch. Do file operations with manage_files only, and tell the user root or Shizuku is required for commands.")
         }
-        appendLine("- Use run_shell for system commands (pm, am, dumpsys, ls, cat). Use run_cli for extension binaries.")
         append("</workspace>")
     }
     private companion object {
@@ -211,7 +223,6 @@ internal fun parseOsReleaseName(content: String): String? {
     return name.filterNot { it.isISOControl() }.trim().take(MAX_DISTRO_NAME_LENGTH).ifBlank { null }
 }
 
-    /** 未绑定工作区时的提示：设备级工具在宿主机上直接工作，没有 Rootfs 挂载。 */
 
 /** 工具链工作区提示词：命令在宿主机（Android）的聚合扩展环境中执行，没有 PRoot 与 /workspace 挂载。 */
 private fun buildToolchainWorkspacePrompt(
@@ -219,14 +230,23 @@ private fun buildToolchainWorkspacePrompt(
     layout: WorkspaceLayout,
     cwd: String? = null,
     commands: List<String> = emptyList(),
+    hasPrivilege: Boolean = true,
 ): String = buildString {
     appendLine("<workspace>")
     appendLine("You have access to a workspace named \"" + workspace.name + "\" on the Android host itself, not inside a proot rootfs.")
     appendLine("- The workspace files directory on the host is \"" + layout.workspaceDir + "\". Use absolute host paths for all workspace tools.")
-    val commandHint = if (commands.isEmpty()) "no extensions installed yet" else commands.take(60).joinToString(", ")
-    appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (extension commands: " + commandHint + ") with root or Shizuku privileges.")
+    if (hasPrivilege) {
+        val commandHint = if (commands.isEmpty()) "no extensions installed yet" else commands.take(60).joinToString(", ")
+        appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (extension commands: " + commandHint + ") with root or Shizuku privileges.")
+        appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
+    } else {
+        // 无 root/Shizuku 时 run_shell / run_cli / env_info 不会暴露；
+        // 必须如实说明，否则模型会反复调用不存在的工具。
+        appendLine("- This device currently has NO root or Shizuku permission, so command execution tools are unavailable: there is no run_shell, run_cli or env_info.")
+        appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch.")
+        appendLine("- You cannot run commands or execute extension binaries here. Tell the user that root or Shizuku is required for commands.")
+    }
     appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount in this workspace type.")
-    appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
     appendLine("- Do NOT use workspace_* tools here: there is no Rootfs, so workspace_read_file / workspace_write_file / workspace_edit_file / workspace_shell are unavailable.")
     appendLine("- Read and write files with manage_files using absolute host paths, e.g. \"" + layout.workspaceDir + "/notes.md\".")
     appendLine("- Prefer targeted edits over rewriting whole files.")

@@ -92,6 +92,9 @@ class LocalTools(
     /** 未绑定工作区时设备级工具实际使用的目录（系统提示词需要告知模型）。 */
     fun fallbackWorkingDir(): String = rikkahubWorkDir
 
+    /** 设备级工具是否有 root/Shizuku：提示词要按这个决定说哪些工具可用。 */
+    fun hasDevicePrivilege(): Boolean = toolchainExecutor.hasPrivilege()
+
     /** 当前已安装扩展提供的命令名，用于提示词里如实描述可用工具。 */
     fun installedCommandNames(): List<String> = runCatching {
         extensionInstaller.installed.value.values
