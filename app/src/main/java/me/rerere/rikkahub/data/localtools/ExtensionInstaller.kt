@@ -308,6 +308,9 @@ class ExtensionInstaller(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Throwable) {
+            // 解压或授权中途失败时 payload 可能是残缺的：不会写入安装记录，
+            // 但半成品目录会留在磁盘上白占空间，这里一并清掉。
+            runCatching { versionDir.deleteRecursively() }
             Result.failure(e)
         } finally {
             archive.delete()
