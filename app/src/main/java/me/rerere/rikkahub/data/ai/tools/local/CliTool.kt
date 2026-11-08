@@ -67,8 +67,11 @@ internal fun buildRunCliTool(executor: ToolchainExecutor, defaultDir: String): T
             listOf(UIMessagePart.Text(buildJsonObject {
                 put("exit_code", r.exitCode)
                 put("timed_out", r.timedOut)
+                // 截断要显式标注，否则模型会把半截输出当成完整结果
                 put("stdout", r.stdout.take(60_000))
+                if (r.stdout.length > 60_000) put("stdout_truncated", "${r.stdout.length} chars total")
                 put("stderr", r.stderr.take(20_000))
+                if (r.stderr.length > 20_000) put("stderr_truncated", "${r.stderr.length} chars total")
             }.toString()))
         }
     }
