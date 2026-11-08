@@ -59,7 +59,9 @@ object ShizukuShellManager {
                 .daemon(false)
                 .processNameSuffix("shizuku_shell")
                 .debuggable(false)
-                .version(1)
+                // 服务实现改了（stderr 分离/截断提示/超时杀树），必须升版本，
+                // 否则 Shizuku 会复用旧进程，新代码不生效。
+                .version(2)
         }.onFailure { Log.e(TAG, "create UserServiceArgs failed", it) }.getOrNull()
 
         // binder 重启后旧 service 失效，等待下次 bind
@@ -130,7 +132,7 @@ object ShizukuShellManager {
                         Result(
                             exitCode = bundle.getInt(ShizukuShellService.KEY_EXIT_CODE, -1),
                             stdout = bundle.getString(ShizukuShellService.KEY_OUTPUT) ?: "",
-                            stderr = "",
+                            stderr = bundle.getString(ShizukuShellService.KEY_ERROR_OUTPUT) ?: "",
                             timedOut = bundle.getBoolean(ShizukuShellService.KEY_TIMED_OUT, false),
                         )
                     )

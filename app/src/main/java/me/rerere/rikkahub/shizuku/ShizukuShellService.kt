@@ -21,11 +21,16 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
     companion object {
         const val KEY_EXIT_CODE = "exitCode"
         const val KEY_OUTPUT = "output"
+        /** stderr 单独返回：之前和 stdout 共用一个 buffer，结果里 stderr 永远是空的。 */
+        const val KEY_ERROR_OUTPUT = "errorOutput"
+        const val KEY_STDOUT_TRUNCATED = "stdoutTruncated"
+        const val KEY_STDERR_TRUNCATED = "stderrTruncated"
         const val KEY_TIMED_OUT = "timedOut"
         const val EXIT_INVALID = -1
         const val EXIT_TIMEOUT = 124
-        private const val MAX_OUTPUT_CHARS = 0x20000
-        private const val DRAIN_JOIN_MILLIS = 2_000L
+        /** 与 ShellExecutor 的 2MB 上限一致；128KB 太小且当时没有截断提示。 */
+        private const val MAX_OUTPUT_CHARS = 2 * 1024 * 1024
+        private const val DRAIN_JOIN_MILLIS = 5_000L
     }
 
     override fun getUid(): Int = AndroidProcess.myUid()
@@ -71,13 +76,13 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
             proc = p
             runCatching { p.outputStream.close() }
 
-            val output = StringBuilder()
-            val stdoutThread = Thread {
-                drain(p.inputStream, output)
-            }.apply { isDaemon = true; start() }
-            val stderrThread = Thread {
-                drain(p.errorStream, output)
-            }.apply { isDaemon = true; start() }
+            // 两个流各用各的 buffer，避免 stderr 混进 stdout、顺序错乱。
+            val outBuf = StringBuilder()
+            val errBuf = StringBuilder()
+            val stdoutThread = Thread { drain(p.inputStream, outBuf) }
+                .apply { isDaemon = true; start() }
+            val stderrThread = Thread { drain(p.errorStream, errBuf) }
+                .apply { isDaemon = true; start() }
 
             val finished = if (timeoutSeconds > 0) {
                 p.waitFor(timeoutSeconds.toLong(), TimeUnit.SECONDS)
@@ -86,14 +91,19 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
                 true
             }
             if (!finished) {
-                runCatching { p.destroyForcibly() }
+                // destroyForcibly 只杀 sh -c 这个父进程，sleep 之类的子进程会变孤儿继续跑。
+                // Shizuku 服务本身就是 root，递归杀整棵进程树最稳。
+                killProcessTree(p)
             }
             stdoutThread.join(DRAIN_JOIN_MILLIS)
             stderrThread.join(DRAIN_JOIN_MILLIS)
 
             result.putBoolean(KEY_TIMED_OUT, !finished)
             result.putInt(KEY_EXIT_CODE, if (finished) runCatching { p.exitValue() }.getOrDefault(EXIT_INVALID) else EXIT_TIMEOUT)
-            result.putString(KEY_OUTPUT, synchronized(output) { output.toString() })
+            result.putString(KEY_OUTPUT, synchronized(outBuf) { outBuf.toString() })
+            result.putString(KEY_ERROR_OUTPUT, synchronized(errBuf) { errBuf.toString() })
+            result.putBoolean(KEY_STDOUT_TRUNCATED, synchronized(outBuf) { outBuf.length >= MAX_OUTPUT_CHARS })
+            result.putBoolean(KEY_STDERR_TRUNCATED, synchronized(errBuf) { errBuf.length >= MAX_OUTPUT_CHARS })
         } catch (t: Throwable) {
             result.putBoolean(KEY_TIMED_OUT, false)
             result.putInt(KEY_EXIT_CODE, EXIT_INVALID)
@@ -108,12 +118,17 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         try {
             BufferedReader(InputStreamReader(input, Charsets.UTF_8), 8192).use { reader ->
                 val buffer = CharArray(4096)
+                var truncated = false
                 while (true) {
                     val n = reader.read(buffer)
                     if (n < 0) break
                     synchronized(output) {
                         if (output.length < MAX_OUTPUT_CHARS) {
-                            output.append(buffer, 0, minOf(n, MAX_OUTPUT_CHARS - output.length))
+                            val room = MAX_OUTPUT_CHARS - output.length
+                            output.append(buffer, 0, minOf(n, room))
+                        } else if (!truncated) {
+                            truncated = true
+                            output.append("\n[output truncated: only first $MAX_OUTPUT_CHARS chars captured]")
                         }
                     }
                 }
@@ -121,5 +136,31 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
         } catch (_: Throwable) {
             // 进程结束时流被关闭，忽略
         }
+    }
+
+    /** 超时/取消时递归杀进程树（Android 的 Process 没有 pid()，反射读私有字段）。 */
+    private fun killProcessTree(process: java.lang.Process) {
+        val pid = runCatching {
+            var cls: Class<*>? = process.javaClass
+            var found = -1L
+            while (cls != null && cls != Any::class.java) {
+                val f = runCatching { cls!!.getDeclaredField("pid") }.getOrNull()
+                if (f != null) {
+                    f.isAccessible = true
+                    found = (f.get(process) as Number).toLong()
+                    break
+                }
+                cls = cls.superclass
+            }
+            found
+        }.getOrDefault(-1L)
+        if (pid > 0) {
+            val cmd = "killtree() { for c in \$(/system/bin/pgrep -P \$1 2>/dev/null); do killtree \$c; done; kill -9 \$1 2>/dev/null; }; killtree $pid"
+            runCatching {
+                Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", cmd))
+                    .waitFor(2_500, TimeUnit.MILLISECONDS)
+            }
+        }
+        runCatching { process.destroyForcibly() }
     }
 }

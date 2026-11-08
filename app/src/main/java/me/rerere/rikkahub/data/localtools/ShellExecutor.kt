@@ -121,18 +121,30 @@ class ShellExecutor(
         stdin: ByteArray? = null,
     ): ShellResult = withContext(Dispatchers.IO) {
         if (mode == ShellMode.SHIZUKU) {
+            // Shizuku UserService 里 ProcessBuilder.directory() 实测没生效（pwd 仍是 /），
+            // 且默认 HOME=/、TMPDIR 为空，mktemp / $TMPDIR 全废。这里在最外层命令文本里
+            // 直接 export + cd，和 root 分支一致，不依赖 AIDL 的 workingDirectory 参数。
+            val prefix = buildString {
+                append("export HOME=").append(homeDir.shellQuote()).append("; ")
+                append("export TMPDIR=").append(tmpDir.shellQuote()).append("; ")
+                if (!cwd.isNullOrBlank()) {
+                    append("cd ").append(cwd.shellQuote()).append(" || cd /; ")
+                }
+            }
             // Shizuku 通道（AIDL）没有 stdin 通道，大内容只能中转：
             // 先落到 App 私有缓存，再让远端命令从文件读，最后删掉。
             var tmpFile: File? = null
             val effectiveCommand = if (stdin != null) {
-                val f = File(context.cacheDir, "stdin_${System.nanoTime()}.b64")
+                // 中转文件必须放在 Shizuku 服务进程（不同 uid）也能读的位置。
+                // App cacheDir 对 shell uid 是 --x，root 可读但不保证；/data/local/tmp 全局可读。
+                val f = File("/data/local/tmp", "rk_stdin_${System.nanoTime()}.b64")
                 runCatching { f.writeBytes(stdin) }.getOrElse { e ->
                     return@withContext ShellResult(-1, "", "写入临时文件失败：${e.message ?: e.toString()}")
                 }
                 tmpFile = f
-                // 把命令里的 stdin 读取改成从文件读
-                "cat ${f.absolutePath.shellQuote()} | ( $command )"
-            } else command
+                // 把命令里的 stdin 读取改成从文件读；prefix 放在子 shell 外，确保 cd 生效
+                "$prefix cat ${f.absolutePath.shellQuote()} | ( $command )"
+            } else "$prefix$command"
             try {
                 val r = ShizukuShellManager.exec(
                     command = effectiveCommand,
