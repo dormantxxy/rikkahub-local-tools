@@ -85,14 +85,14 @@ class ChatToolFactory(
         // - 未绑定 → 留空，由 LocalTools 回退到临时工作区 default/files。
         // 不能写死在构造期常量里，否则切换绑定工作区后不会跟随。
         val deviceWorkingDir = if (boundWorkspace?.workspaceType() == WorkspaceType.TOOLCHAIN) {
-            val dir = java.io.File(
-                workspaceRepository.workspaceFilesDir(boundWorkspace.id, WorkspaceType.TOOLCHAIN)
-            )
+            val dir = workspaceRepository.workspaceFilesDir(boundWorkspace.id, WorkspaceType.TOOLCHAIN)
             // 会话里选过的子目录可能已经不存在（用户删了、工作区被重建），此时回退到工作区根目录，
             // 否则 shell 的 cd 会失败、文件工具会全部报错。
+            // 必须按「目录 + /」比较：只 startsWith(dir) 会把 files-other/x 误判成 files 下的子目录。
+            val base = dir.trimEnd('/')
             workspaceCwd
-                ?.takeIf { it.isNotBlank() && it.startsWith(dir.path) && java.io.File(it).isDirectory }
-                ?: dir.path
+                ?.takeIf { it.isNotBlank() && it != base && it.startsWith("$base/") && java.io.File(it).isDirectory }
+                ?: base
         } else null
         val tools = buildList {
             if (assistant.enableMemory) {
