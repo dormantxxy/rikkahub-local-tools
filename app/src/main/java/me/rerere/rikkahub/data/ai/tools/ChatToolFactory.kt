@@ -33,6 +33,12 @@ private val DEVICE_LEVEL_LOCAL_TOOLS = setOf(
     me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Screenshot,
     me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Logcat,
     me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.AppManager,
+    // 这些同样直接操作宿主机文件/网络，Rootfs 与 SSH 工作区里必须隐藏，
+    // 否则 AI 会在工作区对话里用 manage_files 写到宿主机（不是 /workspace）。
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.Files,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.SearchCode,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.FileTree,
+    me.rerere.rikkahub.data.ai.tools.local.LocalToolOption.WebFetch,
 )
 private const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024
 private const val TOOL_OUTPUT_PREVIEW_CHARS = 4 * 1024
@@ -141,11 +147,10 @@ class ChatToolFactory(
                 )
             }
         }
-        // 过长的输出存成文件让模型按需读取：前提是模型手里有能读文件的工具。
-        // - 有 Rootfs 的本地工作区：/tool_outputs 挂载进 Rootfs，可读；
-        // - 设备级工具环境（未绑定 / 工具链工作区）：run_shell / run_cli 可直接读宿主机路径，也可读；
-        // - 远程 SSH 工作区：文件在本机，远程读不到，不做截断。
-        val canReadToolOutputs = usesDeviceTools ||
+        // 过长的输出存成文件让模型按需读取；只有 Rootfs 工作区把 /tool_outputs 挂进了容器，才读得到。
+        // 设备级工具环境（未绑定 / 工具链工作区）与远程 SSH 工作区都没有这个挂载，
+        // 截断后模型读不到完整内容，所以原样返回（run_shell / run_cli 自身已限制输出长度）。
+        val canReadToolOutputs = workspaceTools.isNotEmpty() &&
             assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }?.capabilities()?.rootfs == true
         return if (canReadToolOutputs) tools.map(::withOutputTruncation) else tools
     }
