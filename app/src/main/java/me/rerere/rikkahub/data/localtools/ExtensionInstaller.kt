@@ -305,6 +305,12 @@ class ExtensionInstaller(
                 envVars = envVars,
             )
             putRecord(record)
+            // 升级到新版本后，旧版本目录没人删会一直占着磁盘，这里顺手清理。
+            runCatching {
+                File(extRoot, entry.id).listFiles()
+                    ?.filter { it.isDirectory && it != versionDir }
+                    ?.forEach { it.deleteRecursively() }
+            }
             Result.success(record)
         } catch (e: CancellationException) {
             throw e
