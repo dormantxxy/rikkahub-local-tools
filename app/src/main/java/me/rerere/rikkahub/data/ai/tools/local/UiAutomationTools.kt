@@ -10,8 +10,10 @@ import kotlinx.serialization.json.put
 import me.rerere.ai.core.InputSchema
 import me.rerere.ai.core.Tool
 import me.rerere.ai.ui.UIMessagePart
+import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
+import org.koin.java.KoinJavaComponent.getKoin
 
 /** 点击屏幕坐标（需 root/Shizuku）。 */
 internal fun buildTapTool(executor: ShellExecutor): Tool = Tool(
@@ -99,20 +101,37 @@ internal fun buildUiDumpTool(executor: ShellExecutor): Tool = Tool(
 /** 截屏（需 root/Shizuku）。 */
 internal fun buildScreenshotTool(context: Context, executor: ShellExecutor): Tool = Tool(
     name = "screenshot",
-    description = "截屏（需 root/Shizuku），保存 PNG 到应用私有目录并返回文件路径。",
+    description = "截屏（需 root/Shizuku）。返回图片本身，可直接查看屏幕内容。",
     parameters = { InputSchema.Obj(properties = buildJsonObject { }) },
     execute = {
         val mode = executor.preferredMode()
         val dir = File(context.filesDir, "screenshots").apply { mkdirs() }
         val out = File(dir, "screen_${System.currentTimeMillis()}.png")
-        val r = executor.execute("screencap -p ${out.absolutePath.shellQuote()} 2>&1; ls -la ${out.absolutePath.shellQuote()} 2>&1", timeoutMillis = 60_000, mode = mode)
-        listOf(UIMessagePart.Text(buildJsonObject {
+        val r = executor.execute(
+            "screencap -p ${out.absolutePath.shellQuote()} 2>&1",
+            timeoutMillis = 60_000,
+            mode = mode,
+        )
+        val text = buildJsonObject {
             put("mode", mode.name.lowercase())
             put("exit_code", r.exitCode)
             put("path", out.absolutePath)
             put("exists", out.exists())
             put("size", if (out.exists()) out.length() else 0)
-            put("output", r.output.take(10_000))
-        }.toString()))
+            if (r.output.isNotBlank()) put("output", r.output.take(2_000))
+        }.toString()
+        // 截图是二进制文件，只回路径模型看不到内容；转成聊天图片部件回传。
+        val bytes = runCatching { if (out.exists() && out.length() > 0) out.readBytes() else null }.getOrNull()
+        if (bytes == null) {
+            listOf(UIMessagePart.Text(text))
+        } else {
+            val filesManager = runCatching { getKoin().get<FilesManager>() }.getOrNull()
+            val uris = filesManager?.createChatFilesByByteArrays(listOf(bytes), displayName = out.name)
+            if (uris.isNullOrEmpty()) {
+                listOf(UIMessagePart.Text(text))
+            } else {
+                listOf(UIMessagePart.Image(url = uris.first().toString()), UIMessagePart.Text(text))
+            }
+        }
     }
 )
