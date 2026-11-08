@@ -23,25 +23,25 @@ class LocalTools(
 ) {
     /**
      * 未绑定工作区时 AI 的默认工作目录：
-     * 有 root/Shizuku 且已授予「所有文件访问」→ 在 /storage/emulated/0/RikkaHub/workspaces/ 下建临时工作区
-     * （布局与工具链工作区一致：workspaces/<root>/files，用户可见、可自行清理）；
-     * 没有高级权限时仍用 /storage/emulated/0/RikkaHub/tmp；
+     * 有 root/Shizuku 且已授予「所有文件访问」→ /storage/emulated/0/RikkaHub/workspaces/<临时工作区>/files
+     * （布局与工具链工作区一致，用户可见、可自行清理）；
+     * 没有高级权限时用 /storage/emulated/0/RikkaHub/tmp；
      * 都没授权时回退到 App 私有 files/RikkaHub。
      */
-    private val rikkahubWorkDir: String by lazy {
+    private fun resolveFallbackWorkingDir(): String {
         val canUsePublic = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R &&
             runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
         val publicRoot = java.io.File("/storage/emulated/0/RikkaHub")
         val candidates = buildList {
             if (canUsePublic && toolchainExecutor.hasPrivilege()) {
                 // 临时工作区：与工具链工作区同一套目录约定 workspaces/<root>/files
-                add(java.io.File(publicRoot, "workspaces/" + TEMP_WORKSPACE_ROOT + "/files"))
+                add(java.io.File(publicRoot, "workspaces/$TEMP_WORKSPACE_ROOT/files"))
             }
             if (canUsePublic) add(java.io.File(publicRoot, "tmp"))
             add(java.io.File(context.filesDir, "RikkaHub"))
         }
         // 授权了但目录不可写时继续往后回退，避免 AI 工具全部失败
-        candidates.firstOrNull { dir ->
+        return candidates.firstOrNull { dir ->
             runCatching {
                 dir.mkdirs()
                 val probe = java.io.File(dir, ".probe_" + System.nanoTime())
@@ -51,6 +51,21 @@ class LocalTools(
             }.getOrDefault(false)
         }?.absolutePath ?: java.io.File(context.filesDir, "RikkaHub").apply { mkdirs() }.absolutePath
     }
+
+    /** 上一次算出的目录。每次使用前都要复核，用户可能删掉目录或撤销授权。 */
+    @Volatile
+    private var cachedWorkDir: String? = null
+
+    private val rikkahubWorkDir: String
+        get() {
+            cachedWorkDir?.let { cached ->
+                val stillUsable = runCatching {
+                    java.io.File(cached).let { it.isDirectory && it.canWrite() }
+                }.getOrDefault(false)
+                if (stillUsable) return cached
+            }
+            return resolveFallbackWorkingDir().also { cachedWorkDir = it }
+        }
 
     val javascriptTool by lazy { buildJavascriptTool() }
     val timeTool by lazy { buildTimeInfoTool() }
@@ -77,7 +92,7 @@ class LocalTools(
     /** 未绑定工作区时设备级工具实际使用的目录（系统提示词需要告知模型）。 */
     fun fallbackWorkingDir(): String = rikkahubWorkDir
 
-    /** 当前已安装扩展提供的常用命令名，用于提示词里如实描述可用工具。 */
+    /** 当前已安装扩展提供的命令名，用于提示词里如实描述可用工具。 */
     fun installedCommandNames(): List<String> = runCatching {
         extensionInstaller.installed.value.values
             .flatMap { rec -> java.io.File(rec.payloadDir, "bin").listFiles()?.map { it.name } ?: emptyList() }
@@ -91,7 +106,8 @@ class LocalTools(
         deviceShellApproval: Boolean = true,
         /**
          * 实际生效的工作目录。
-         * 绑定了工具链工作区时是 workspaces/<工作区id>/files；未绑定时是临时工作区 default/files。
+         * 绑定了工具链工作区时是 workspaces/<工作区id>/files（含会话里选的子目录）；
+         * 未绑定时由 [rikkahubWorkDir] 决定。
          * 不能写死成构造期常量：同一进程内切换绑定工作区后必须立刻跟随。
          */
         workingDir: String? = null,
