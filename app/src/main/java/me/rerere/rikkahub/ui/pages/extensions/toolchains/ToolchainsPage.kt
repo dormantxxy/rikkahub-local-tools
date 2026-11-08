@@ -248,7 +248,7 @@ fun ToolchainsPage() {
             ) {
                 PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
                 DownloadRouteButton(
-                    currentId = routeId,
+                    currentId = routeIdState.value,
                     onSelect = { id ->
                         DownloadRoute.set(context, id)
                         vm.ensureTermuxIndex(force = true)
