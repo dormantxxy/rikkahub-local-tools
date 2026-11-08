@@ -97,7 +97,11 @@ internal fun buildRunShellTool(
         listOf(UIMessagePart.Text(buildJsonObject {
             put("mode", if (useToolchain) "toolchain" else mode.name.lowercase())
             put("exit_code", r.exitCode); put("timed_out", r.timedOut)
-            put("stdout", r.stdout.take(60_000)); put("stderr", r.stderr.take(20_000))
+            // 截断要显式说明：否则模型会把半截输出当成完整结果。
+            put("stdout", r.stdout.take(60_000))
+            if (r.stdout.length > 60_000) put("stdout_truncated", "${r.stdout.length} chars total")
+            put("stderr", r.stderr.take(20_000))
+            if (r.stderr.length > 20_000) put("stderr_truncated", "${r.stderr.length} chars total")
         }.toString()))
     }
 )
@@ -156,7 +160,14 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
         } else {
         val cmd: String = when (action) {
             "list" -> "ls -la ${(path ?: error("path is required for list")).shellQuote()} 2>&1"
-            "read" -> "cat ${(path ?: error("path is required for read")).shellQuote()} 2>&1 | head -c 60000"
+            "read" -> {
+                val pth = path ?: error("path is required for read")
+                val q = pth.shellQuote()
+                // 超过 60KB 只取前 60KB，并在末尾标注真实大小，否则模型会把半截文件当成完整内容
+                "sz=\$(wc -c < $q 2>/dev/null || echo 0); " +
+                    "cat $q 2>&1 | head -c 60000; " +
+                    "if [ \"\$sz\" -gt 60000 ] 2>/dev/null; then echo; echo \"[truncated: \$sz bytes total, first 60000 shown]\"; fi"
+            }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED"
             "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK"
             "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED"
