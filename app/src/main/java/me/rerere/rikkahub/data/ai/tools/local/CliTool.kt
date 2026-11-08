@@ -52,7 +52,10 @@ internal fun buildRunCliTool(executor: ToolchainExecutor, defaultDir: String): T
     execute = {
         val p = it.jsonObject
         val cmd = p["command"]?.jsonPrimitive?.contentOrNull ?: error("command is required")
-        val cwd = p["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() } ?: defaultDir
+        // cwd 可能是相对路径，按工作区根目录解析（进程当前目录不可预期）
+        val cwd = p["cwd"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
+            ?.let { if (it.startsWith("/")) it else java.io.File(defaultDir, it).path }
+            ?: defaultDir
         val timeoutMs = (p["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000) ?: 60_000.0)
             .toLong().coerceIn(1_000L, 600_000L)
         if (!executor.hasPrivilege()) {
