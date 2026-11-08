@@ -54,12 +54,26 @@ class WorkspaceRepository(
             // 文件不在本机的工作区 (如远程) 没有本地目录和 Rootfs
             if (!workspace.capabilities().localFiles) continue
             val dir = manager.workspaceDir(workspace.root, workspace.workspaceType())
+            // 目录缺失时自动重建：BROKEN 没有任何恢复路径，用户清理掉目录后
+            // 状态会永久卡在「错误」，工具再也不会暴露。工具链工作区文件在公共目录，
+            // 更容易被用户手动删掉，所以这里统一重建后再统一判定状态。
             if (!dir.exists()) {
-                // 目录缺失时不删除记录(例如恢复备份后工作区文件未随数据库一起恢复),
-                // 仅标记为 BROKEN 以保留记录与助手绑定, 避免误删用户工作区
-                Log.w(TAG, "Workspace directory missing, marking as broken: id=${workspace.id}, root=${workspace.root}")
-                if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
-                    updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                Log.w(TAG, "Workspace directory missing, recreating: id=${workspace.id}, root=${workspace.root}")
+                val recreated = runCatching {
+                    manager.ensureWorkspace(workspace.root, workspace.workspaceType())
+                }.isSuccess
+                if (!recreated) {
+                    if (workspace.shellStatus != WorkspaceShellStatus.BROKEN.name) {
+                        updateShellState(workspace.id, WorkspaceShellStatus.BROKEN.name)
+                    }
+                    continue
+                }
+                // 目录已重建，按能力重新判定状态：工具链工作区始终就绪，本地工作区看 Rootfs
+                val restored = if (!workspace.capabilities().rootfs ||
+                    manager.hasRootfs(workspace.root, workspace.workspaceType())
+                ) WorkspaceShellStatus.READY.name else WorkspaceShellStatus.DISABLED.name
+                if (workspace.shellStatus != restored) {
+                    updateShellState(workspace.id, restored)
                 }
                 continue
             }
