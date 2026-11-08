@@ -16,6 +16,9 @@ import me.rerere.rikkahub.data.localtools.ShellResult
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.shellQuote
 
+/** 单次写入的分块大小：base64 后约 80KB，留足内核单个 argv 的上限余量。 */
+private const val WRITE_CHUNK_BYTES = 60 * 1024
+
 // 精确的危险命令判断：避免 rm -rf /data/... 这类安全路径被误判
 private val DANGEROUS_PATTERNS = listOf(
     Regex("""rm\s+-rf\s+/(\s|$|;|&|\|)"""),
@@ -119,10 +122,28 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
             "read" -> "cat ${(path ?: error("path is required for read")).shellQuote()} 2>&1 | head -c 60000"
             "write" -> {
                 val pth = path ?: error("path is required for write")
-                val b64 = Base64.encodeToString((content ?: "").toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                val bytes = (content ?: "").toByteArray(Charsets.UTF_8)
                 val parent = pth.substringBeforeLast('/', "")
-                (if (parent.isNotBlank()) "mkdir -p ${parent.shellQuote()}; " else "") +
-                    "printf '%s' ${b64.shellQuote()} | base64 -d > ${pth.shellQuote()} 2>&1 && echo WROTE_OK"
+                val mkdir = if (parent.isNotBlank()) "mkdir -p ${parent.shellQuote()}; " else ""
+                // 单个命令行参数有内核上限（约 128KB），大文件必须分块追加，
+                // 否则 base64 后的内容会触发 "Argument list too long" 而写入失败。
+                val chunks = (0 until bytes.size step WRITE_CHUNK_BYTES).map { start ->
+                    val end = minOf(start + WRITE_CHUNK_BYTES, bytes.size)
+                    Base64.encodeToString(bytes.copyOfRange(start, end), Base64.NO_WRAP)
+                }
+                if (chunks.isEmpty()) {
+                    "${mkdir}: > ${pth.shellQuote()} 2>&1 && echo WROTE_OK"
+                } else {
+                    buildString {
+                        append(mkdir)
+                        append(": > ${pth.shellQuote()}; ")
+                        chunks.forEachIndexed { index, b64 ->
+                            val redirect = if (index == 0) ">" else ">>"
+                            append("printf '%s' ${b64.shellQuote()} | base64 -d $redirect ${pth.shellQuote()}; ")
+                        }
+                        append("echo WROTE_OK")
+                    }
+                }
             }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED"
             "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK"
