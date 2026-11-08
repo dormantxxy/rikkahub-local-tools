@@ -132,9 +132,11 @@ class ChatToolFactory(
                 )
             }
         }
-        // 过长的输出存成文件让模型用 shell 按需读取；没有 shell 时模型读不到文件，只能原样返回。
-        // 文件放在本机, 只有本地 Rootfs 挂载了 /tool_outputs, 远程工作区同样读不到
-        val canReadToolOutputs = workspaceTools.isNotEmpty() &&
+        // 过长的输出存成文件让模型按需读取：前提是模型手里有能读文件的工具。
+        // - 有 Rootfs 的本地工作区：/tool_outputs 挂载进 Rootfs，可读；
+        // - 设备级工具环境（未绑定 / 工具链工作区）：run_shell / run_cli 可直接读宿主机路径，也可读；
+        // - 远程 SSH 工作区：文件在本机，远程读不到，不做截断。
+        val canReadToolOutputs = usesDeviceTools ||
             assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }?.capabilities()?.rootfs == true
         return if (canReadToolOutputs) tools.map(::withOutputTruncation) else tools
     }

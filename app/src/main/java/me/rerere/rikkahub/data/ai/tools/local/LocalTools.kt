@@ -63,7 +63,6 @@ class LocalTools(
     val chartDisplayTool by lazy { buildChartDisplayTool() }
 
     // ===== 增强工具 =====
-    val envInfoTool by lazy { buildEnvInfoTool(context, toolchainExecutor, extensionInstaller) }
     val pkgSearchTool by lazy { buildPkgSearchTool(context) }
     val pkgInstallTool by lazy { buildPkgInstallTool(context, extensionInstaller) }
     val tapTool by lazy { buildTapTool(shellExecutor) }
@@ -74,6 +73,17 @@ class LocalTools(
     val logcatTool by lazy { buildLogcatTool(shellExecutor) }
     val appManagerTool by lazy { buildAppManagerTool(shellExecutor) }
     val webFetchTool by lazy { buildWebFetchTool() }
+
+    /** 未绑定工作区时设备级工具实际使用的目录（系统提示词需要告知模型）。 */
+    fun fallbackWorkingDir(): String = rikkahubWorkDir
+
+    /** 当前已安装扩展提供的常用命令名，用于提示词里如实描述可用工具。 */
+    fun installedCommandNames(): List<String> = runCatching {
+        extensionInstaller.installed.value.values
+            .flatMap { rec -> java.io.File(rec.payloadDir, "bin").listFiles()?.map { it.name } ?: emptyList() }
+            .distinct()
+            .sorted()
+    }.getOrDefault(emptyList())
 
     fun getTools(
         options: List<LocalToolOption>,
@@ -123,7 +133,7 @@ class LocalTools(
         }
         // 工具链增强（env_info/pkg_search/pkg_install）依赖 root/Shizuku：无权限时不暴露
         if (options.contains(LocalToolOption.Toolchain) && toolchainExecutor.hasPrivilege()) {
-            tools.add(envInfoTool)
+            tools.add(buildEnvInfoTool(context, toolchainExecutor, extensionInstaller, dir))
             tools.add(pkgSearchTool)
             tools.add(pkgInstallTool)
         }

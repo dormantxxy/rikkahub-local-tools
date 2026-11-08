@@ -77,6 +77,7 @@ class ChatRequestFactory(
     private val memoryRepository: MemoryRepository,
     templateTransformer: TemplateTransformer,
     workspaceRepository: WorkspaceRepository,
+    localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
 ) {
     private val inputTransformers: List<InputMessageTransformer> = listOf(
         TimeReminderTransformer,
@@ -85,7 +86,7 @@ class ChatRequestFactory(
         DocumentAsPromptTransformer,
         OcrTransformer,
         templateTransformer,
-        WorkspaceReminderTransformer(workspaceRepository),
+        WorkspaceReminderTransformer(workspaceRepository, localTools),
     )
 
     private val outputTransformers: List<OutputMessageTransformer> = listOf(

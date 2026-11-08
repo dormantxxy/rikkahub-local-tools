@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class WorkspaceReminderTransformer(
     private val workspaceRepository: WorkspaceRepository,
+    private val localTools: me.rerere.rikkahub.data.ai.tools.local.LocalTools,
 ) : InputMessageTransformer {
     private val remoteEnvironments = RemoteEnvironmentCache()
 
@@ -33,14 +34,19 @@ class WorkspaceReminderTransformer(
         ctx: TransformerContext,
         messages: List<UIMessage>,
     ): List<UIMessage> {
-        val workspaceId = ctx.assistant.workspaceId?.toString() ?: return messages
+        val workspaceId = ctx.assistant.workspaceId?.toString()
+        // 未绑定工作区：设备级工具仍在工作，但没有 Rootfs。
+        // 必须告诉模型实际的默认目录，否则它会以为目录是 App 私有路径或工作区路径。
+        if (workspaceId.isNullOrBlank()) {
+            return messages.withPrompt(buildStandalonePrompt())
+        }
         val workspace = workspaceRepository.getById(workspaceId) ?: return messages
         // 与 ChatToolFactory.createWorkspaceToolsIfReady 保持一致: 仅在 shell 就绪时注入
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) return messages
         val layout = workspaceRepository.layout(workspaceId) ?: return messages
 
         val prompt = if (workspace.workspaceType() == me.rerere.workspace.WorkspaceType.TOOLCHAIN) {
-            buildToolchainWorkspacePrompt(workspace, layout, ctx.workspaceCwd)
+            buildToolchainWorkspacePrompt(workspace, layout, ctx.workspaceCwd, localTools.installedCommandNames())
         } else if (workspace.isSsh()) {
             val environment = remoteEnvironments.get(workspaceId, workspace.sshConfig) {
                 // shell 探测需要连接, 失败时不再读发行版, 以免再等一次超时
@@ -125,6 +131,22 @@ class WorkspaceReminderTransformer(
             null
         }
 
+
+    /** 未绑定工作区时的提示：设备级工具在宿主机上直接工作，没有 Rootfs 挂载。 */
+    private fun buildStandalonePrompt(): String = buildString {
+        val dir = localTools.fallbackWorkingDir()
+        appendLine("<workspace>")
+        appendLine("No workspace is bound. You are working directly on the Android host, not inside a proot rootfs.")
+        appendLine("- Default directory for run_shell / run_cli / manage_files / search_code / file_tree is \"" + dir + "\".")
+        appendLine("- Use absolute host paths. This is a temporary area; the user can see and clean it.")
+        appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount here.")
+        val commands = localTools.installedCommandNames()
+        if (commands.isNotEmpty()) {
+            appendLine("- Commands provided by installed extensions (run them with run_cli, which uses the aggregated PATH/LD_LIBRARY_PATH): " + commands.take(60).joinToString(", ") + ".")
+        }
+        appendLine("- Use run_shell for system commands (pm, am, dumpsys, ls, cat). Use run_cli for extension binaries.")
+        append("</workspace>")
+    }
     private companion object {
         const val MAX_AGENTS_BYTES = 64L * 1024
         const val MAX_OS_RELEASE_BYTES = 16L * 1024
@@ -189,16 +211,20 @@ internal fun parseOsReleaseName(content: String): String? {
     return name.filterNot { it.isISOControl() }.trim().take(MAX_DISTRO_NAME_LENGTH).ifBlank { null }
 }
 
+    /** 未绑定工作区时的提示：设备级工具在宿主机上直接工作，没有 Rootfs 挂载。 */
+
 /** 工具链工作区提示词：命令在宿主机（Android）的聚合扩展环境中执行，没有 PRoot 与 /workspace 挂载。 */
 private fun buildToolchainWorkspacePrompt(
     workspace: WorkspaceEntity,
     layout: WorkspaceLayout,
     cwd: String? = null,
+    commands: List<String> = emptyList(),
 ): String = buildString {
     appendLine("<workspace>")
     appendLine("You have access to a workspace named \"" + workspace.name + "\" on the Android host itself, not inside a proot rootfs.")
     appendLine("- The workspace files directory on the host is \"" + layout.workspaceDir + "\". Use absolute host paths for all workspace tools.")
-    appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (installed extensions: node, python, git, rg) with root or Shizuku privileges.")
+    val commandHint = if (commands.isEmpty()) "no extensions installed yet" else commands.take(60).joinToString(", ")
+    appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (extension commands: " + commandHint + ") with root or Shizuku privileges.")
     appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount in this workspace type.")
     appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
     appendLine("- Do NOT use workspace_* tools here: there is no Rootfs, so workspace_read_file / workspace_write_file / workspace_edit_file / workspace_shell are unavailable.")

@@ -19,6 +19,7 @@ internal fun buildEnvInfoTool(
     context: Context,
     executor: ToolchainExecutor,
     installer: ExtensionInstaller,
+    defaultDir: String? = null,
 ): Tool = Tool(
     name = "env_info",
     description = "查看原生工具链环境：工作目录、PATH、LD_LIBRARY_PATH、已安装扩展列表与权限状态。",
@@ -26,7 +27,7 @@ internal fun buildEnvInfoTool(
     execute = {
         val env = executor.currentEnv()
         val payload = buildJsonObject {
-            put("workDir", env.workDir)
+            put("workDir", defaultDir?.takeIf { it.isNotBlank() } ?: env.workDir)
             put("path", env.path)
             put("ldLibraryPath", env.ldLibraryPath)
             put("hasPrivilege", executor.hasPrivilege())
