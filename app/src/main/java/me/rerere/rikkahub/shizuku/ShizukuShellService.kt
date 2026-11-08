@@ -53,7 +53,10 @@ class ShizukuShellService(@Suppress("UNUSED_PARAMETER") context: Context) : IShi
             }
             val builder = ProcessBuilder(effectiveArgv)
             if (!workingDirectory.isNullOrBlank()) {
-                builder.directory(File(workingDirectory))
+                // 目录可能已被删除：ProcessBuilder.directory 指向不存在的路径会抛 IOException，
+                // 整个 exec 直接返回 exitCode=-1，调用方只能看到「失败」而查不出原因。
+                val dir = File(workingDirectory)
+                if (dir.isDirectory) builder.directory(dir)
             }
             if (environment.isNotEmpty()) {
                 val env = builder.environment()
