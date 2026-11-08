@@ -152,19 +152,27 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
                     Base64.encodeToString(bytes.copyOfRange(start, end), Base64.NO_WRAP)
                 }
                 if (chunks.isEmpty()) {
-                    "${mkdir}: > ${pth.shellQuote()} 2>&1 && echo WROTE_OK"
+                    "${mkdir}( : > ${pth.shellQuote()} ) 2>/dev/null && echo WROTE_OK || { echo WRITE_FAILED; false; }"
                 } else {
                     buildString {
                         append(mkdir)
-                        append(": > ${pth.shellQuote()}; ")
+                        // 两处坑：
+                        // 1) 重定向失败会让 sh 直接中止整条脚本（连后面的 echo 都不执行），
+                        //    所以每段都包在子 shell 里：( … ) 2>/dev/null || ok=0。
+                        // 2) 以前用 ; 串起来，第一步失败后 echo WROTE_OK 照样执行，
+                        //    模型会误以为文件已写好。
+                        append("ok=1; ")
+                        append("( : > ${pth.shellQuote()} ) 2>/dev/null || ok=0; ")
                         chunks.forEachIndexed { index, b64 ->
                             val redirect = if (index == 0) ">" else ">>"
-                            append("printf '%s' ${b64.shellQuote()} | base64 -d $redirect ${pth.shellQuote()}; ")
+                            append("if [ \$ok -eq 1 ]; then ")
+                            append("( printf '%s' ${b64.shellQuote()} | base64 -d $redirect ${pth.shellQuote()} ) 2>/dev/null || ok=0; ")
+                            append("fi; ")
                         }
-                        append("echo WROTE_OK")
+                        append("if [ \$ok -eq 1 ]; then echo WROTE_OK; else echo WRITE_FAILED; false; fi")
                     }
                 }
-            }
+                }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED"
             "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK"
             "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED"
