@@ -80,6 +80,11 @@ class ChatToolFactory(
         } else {
             createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         }
+        // 设备级工具的默认工作目录：绑定工具链工作区时跟随该工作区的 files 目录；未绑定时留空，
+        // 由 LocalTools 回退到临时工作区 default/files。此前写死在构造期常量，切换绑定工作区后不会跟随。
+        val deviceWorkingDir = boundWorkspace
+            ?.takeIf { it.workspaceType() == WorkspaceType.TOOLCHAIN }
+            ?.let { workspaceRepository.workspaceFilesDir(it.id, WorkspaceType.TOOLCHAIN) }
         val tools = buildList {
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
@@ -87,7 +92,13 @@ class ChatToolFactory(
             if (shouldUseExternalWebSearch(assistant, model)) {
                 addAll(createSearchTools(settings))
             }
-            addAll(localTools.getTools(effectiveLocalTools, deviceShellApproval = assistant.deviceShellApproval))
+            addAll(
+                localTools.getTools(
+                    options = effectiveLocalTools,
+                    deviceShellApproval = assistant.deviceShellApproval,
+                    workingDir = deviceWorkingDir,
+                )
+            )
             if (assistant.enableRecentChatsReference) {
                 addAll(createConversationTools(conversationRepository, assistant.id))
             }

@@ -21,8 +21,6 @@ class LocalTools(
     private val toolchainExecutor: ToolchainExecutor,
     private val extensionInstaller: ExtensionInstaller,
 ) {
-    private val defaultDir = context.filesDir.absolutePath
-
     /**
      * 未绑定工作区时 AI 的默认工作目录：
      * 有 root/Shizuku 且已授予「所有文件访问」→ 在 /storage/emulated/0/RikkaHub/workspaces/ 下建临时工作区
@@ -64,14 +62,6 @@ class LocalTools(
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
     val chartDisplayTool by lazy { buildChartDisplayTool() }
 
-    // ===== 本地工具（设备 Shell / 文件 / 检索 / 文件树 / 网页浏览 / CLI 工具链） =====
-    val runShellTool by lazy { buildRunShellTool(shellExecutor, rikkahubWorkDir, toolchainExecutor, extensionInstaller) }
-    val manageFilesTool by lazy { buildManageFilesTool(shellExecutor, rikkahubWorkDir) }
-    val searchCodeTool by lazy { buildSearchCodeTool(shellExecutor, rikkahubWorkDir) }
-    val fileTreeTool by lazy { buildFileTreeTool(shellExecutor, rikkahubWorkDir) }
-    val webFetchTool by lazy { buildWebFetchTool() }
-    val runCliTool by lazy { buildRunCliTool(toolchainExecutor, rikkahubWorkDir) }
-
     // ===== 增强工具 =====
     val envInfoTool by lazy { buildEnvInfoTool(context, toolchainExecutor, extensionInstaller) }
     val pkgSearchTool by lazy { buildPkgSearchTool(context) }
@@ -83,12 +73,22 @@ class LocalTools(
     val screenshotTool by lazy { buildScreenshotTool(context, shellExecutor) }
     val logcatTool by lazy { buildLogcatTool(shellExecutor) }
     val appManagerTool by lazy { buildAppManagerTool(shellExecutor) }
+    val webFetchTool by lazy { buildWebFetchTool() }
 
     fun getTools(
         options: List<LocalToolOption>,
         /** 设备 Shell 是否需要审批（来自工作区工具审批设置，默认需要）。 */
         deviceShellApproval: Boolean = true,
+        /**
+         * 实际生效的工作目录。
+         * 绑定了工具链工作区时是 workspaces/<工作区id>/files；未绑定时是临时工作区 default/files。
+         * 不能写死成构造期常量：同一进程内切换绑定工作区后必须立刻跟随。
+         */
+        workingDir: String? = null,
     ): List<Tool> {
+        val dir = workingDir?.takeIf { it.isNotBlank() } ?: rikkahubWorkDir
+        // 目录在首次使用时可能不存在（例如新绑定工作区、临时工作区被用户删除），这里补建
+        runCatching { java.io.File(dir).mkdirs() }
         val tools = mutableListOf<Tool>()
         if (options.contains(LocalToolOption.JavascriptEngine)) tools.add(javascriptTool)
         if (options.contains(LocalToolOption.TimeInfo)) tools.add(timeTool)
@@ -103,21 +103,24 @@ class LocalTools(
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
         // run_shell（设备命令）依赖 root/Shizuku：无权限时不暴露
         if (options.contains(LocalToolOption.Shell) && toolchainExecutor.hasPrivilege()) {
+            val shellTool = buildRunShellTool(shellExecutor, dir, toolchainExecutor, extensionInstaller)
             // 设备 Shell 审批开关：关闭时完全不拦截（包括风险命令）；开启时仅风险命令需要审批
             tools.add(
                 if (deviceShellApproval) {
-                    runShellTool.copy(needsApproval = { input -> runShellTool.needsApproval(input) })
+                    shellTool
                 } else {
-                    runShellTool.copy(needsApproval = { false })
+                    shellTool.copy(needsApproval = { false })
                 }
             )
         }
-        if (options.contains(LocalToolOption.Files)) tools.add(manageFilesTool)
-        if (options.contains(LocalToolOption.SearchCode)) tools.add(searchCodeTool)
-        if (options.contains(LocalToolOption.FileTree)) tools.add(fileTreeTool)
+        if (options.contains(LocalToolOption.Files)) tools.add(buildManageFilesTool(shellExecutor, dir))
+        if (options.contains(LocalToolOption.SearchCode)) tools.add(buildSearchCodeTool(shellExecutor, dir))
+        if (options.contains(LocalToolOption.FileTree)) tools.add(buildFileTreeTool(shellExecutor, dir))
         if (options.contains(LocalToolOption.WebFetch)) tools.add(webFetchTool)
         // run_cli 依赖 root/Shizuku：读 App 启动时缓存的权限状态（轻量，不启动 su）
-        if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) tools.add(runCliTool)
+        if (options.contains(LocalToolOption.Cli) && toolchainExecutor.hasPrivilege()) {
+            tools.add(buildRunCliTool(toolchainExecutor, dir))
+        }
         // 工具链增强（env_info/pkg_search/pkg_install）依赖 root/Shizuku：无权限时不暴露
         if (options.contains(LocalToolOption.Toolchain) && toolchainExecutor.hasPrivilege()) {
             tools.add(envInfoTool)
