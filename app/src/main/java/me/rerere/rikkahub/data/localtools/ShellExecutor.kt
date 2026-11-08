@@ -241,7 +241,12 @@ class ShellExecutor(
         } catch (_: TimeoutCancellationException) { false }
         catch (e: CancellationException) { killTree(process); throw e }
         if (!finished) { killTree(process); runCatching { process.waitFor(2, TimeUnit.SECONDS) } }
-        outT.join(2_000); errT.join(2_000)
+        // 进程结束后管道会关闭，读取线程随即退出；给它足够时间把缓冲读完，
+        // 否则大输出（cat 大文件 / logcat）会被截断成残缺内容。
+        outT.join(5_000); errT.join(5_000)
+        // 仍未结束说明流没有正确关闭，主动关掉底层流让线程退出，避免累积
+        if (outT.isAlive) runCatching { process.inputStream.close() }
+        if (errT.isAlive) runCatching { process.errorStream.close() }
         val code = if (finished) runCatching { process.exitValue() }.getOrDefault(-1) else -1
         return ShellResult(code, outBuf.toString(), errBuf.toString(), timedOut = !finished)
     }
