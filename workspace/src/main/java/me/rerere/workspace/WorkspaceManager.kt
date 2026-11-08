@@ -52,18 +52,27 @@ class WorkspaceManager(
      */
     private fun baseDirFor(type: WorkspaceType): File {
         val external = toolchainBaseDir
-        if (type == WorkspaceType.TOOLCHAIN && external != null && isWritableDir(external)) return external
+        if (type == WorkspaceType.TOOLCHAIN && external != null && isWritableDirCached(external)) return external
         return baseDir
     }
 
-    /** 目录存在且可写（mkdirs 之后再写入探针确认，避免只读挂载）。 */
-    private fun isWritableDir(dir: File): Boolean = runCatching {
-        dir.mkdirs()
-        val probe = File(dir, ".probe_" + System.nanoTime())
-        probe.writeText("x")
-        probe.delete()
-        true
-    }.getOrDefault(false)
+    /** 探针结果缓存：filesDir 在列表刷新等场景调用很频繁，不能每次都写盘探测。 */
+    @Volatile
+    private var writableProbe: Pair<String, Boolean>? = null
+
+    private fun isWritableDirCached(dir: File): Boolean {
+        val key = dir.absolutePath
+        writableProbe?.let { (cachedKey, cachedResult) -> if (cachedKey == key) return cachedResult }
+        val result = runCatching {
+            dir.mkdirs()
+            val probe = File(dir, ".probe_" + System.nanoTime())
+            probe.writeText("x")
+            probe.delete()
+            true
+        }.getOrDefault(false)
+        writableProbe = key to result
+        return result
+    }
 
     fun ensureWorkspace(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
         val dir = workspaceDir(root, type)
