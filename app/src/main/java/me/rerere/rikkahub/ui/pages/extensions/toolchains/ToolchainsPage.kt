@@ -566,7 +566,7 @@ private fun DownloadRouteButton(
     Box {
         TextButton(onClick = { expanded = true }) {
             Text(
-                "下载路线：" + DownloadRoute.label(currentId ?: "auto") + " ▾",
+                "下载路线：" + DownloadRoute.label(currentRoute) + " ▾",
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
