@@ -42,6 +42,13 @@ class ShellExecutor(
     private val context: Context,
 ) {
     companion object {
+        /**
+         * 单个流最多保留的字符数。命令输出可能极大（cat 大文件、dd、logcat），
+         * 不设上限时 StringBuilder 会一直增长直到 OOM。超过部分继续读掉但不保存，
+         * 否则子进程写满管道会阻塞、永远退不出。
+         */
+        private const val MAX_CAPTURE_CHARS = 2 * 1024 * 1024
+
         const val HOST_PATH =
             "/sbin:/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin"
     }
@@ -267,15 +274,27 @@ class ShellExecutor(
         return ShellResult(code, outBuf.toString(), errBuf.toString(), timedOut = !finished)
     }
 
-    /** 取消/超时时杀掉整棵进程树（su/Shizuku 会 fork 子进程，单杀父不够）。 */
+    /**
+     * 取消/超时时杀掉整棵进程树。
+     *
+     * root 模式下 su → nsenter → sh → 实际命令，这些进程的 uid 都是 root，
+     * 而 App 进程（u0_a811）没有 CAP_KILL，直接 kill 一律 Permission denied，
+     * 结果命令的子孙进程变成孤儿继续跑（实测 sleep 30 超时后仍残留到自然结束）。
+     * 所以必须借 su 以 root 身份递归杀，并用 pgrep 逐层找子进程（pkill -P 只杀一层）。
+     */
     private fun killTree(process: Process) {
-        runCatching {
-            val pid = process.pid()
-            if (pid > 0) {
-                Runtime.getRuntime().exec(arrayOf(
-                    "/system/bin/sh", "-c",
-                    "pkill -9 -P $pid 2>/dev/null; kill -9 -$pid 2>/dev/null; kill -9 $pid 2>/dev/null"
-                )).waitFor(1500, TimeUnit.MILLISECONDS)
+        val pid = process.pid()
+        if (pid > 0) {
+            val cmd = "killtree() { for c in \$(/system/bin/pgrep -P \$1 2>/dev/null); do killtree \$c; done; kill -9 \$1 2>/dev/null; }; killtree $pid"
+            val killedByRoot = runCatching {
+                Runtime.getRuntime().exec(arrayOf("/system/bin/su", "-c", cmd))
+                    .waitFor(2_500, TimeUnit.MILLISECONDS)
+            }.getOrDefault(false)
+            if (!killedByRoot) {
+                runCatching {
+                    Runtime.getRuntime().exec(arrayOf("/system/bin/sh", "-c", cmd))
+                        .waitFor(1_500, TimeUnit.MILLISECONDS)
+                }
             }
         }
         runCatching { process.destroyForcibly() }
@@ -286,7 +305,20 @@ class ShellExecutor(
             runCatching {
                 stream.bufferedReader().use { r ->
                     val c = CharArray(4096)
-                    while (true) { val n = r.read(c); if (n < 0) break; synchronized(buf) { buf.append(c, 0, n) } }
+                    var truncated = false
+                    while (true) {
+                        val n = r.read(c); if (n < 0) break
+                        synchronized(buf) {
+                            if (buf.length < MAX_CAPTURE_CHARS) {
+                                val room = MAX_CAPTURE_CHARS - buf.length
+                                buf.append(c, 0, minOf(n, room))
+                            } else if (!truncated) {
+                                truncated = true
+                                buf.append("\n[output truncated: only first ")
+                                    .append(MAX_CAPTURE_CHARS).append(" chars captured]")
+                            }
+                        }
+                    }
                 }
             }
         }
