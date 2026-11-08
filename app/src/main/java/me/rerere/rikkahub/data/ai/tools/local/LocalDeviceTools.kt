@@ -168,12 +168,11 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
                     "cat $q 2>&1 | head -c 60000; " +
                     "if [ \"\$sz\" -gt 60000 ] 2>/dev/null; then echo; echo \"[truncated: \$sz bytes total, first 60000 shown]\"; fi"
             }
-            "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED"
-            "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK"
-            "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED"
-            "move" -> "mv -f ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo MOVED"
+            "delete" -> "${(path ?: error("path is required for delete")).shellQuote()} 2>/dev/null; rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED || { echo DELETE_FAILED; false; }"
+            "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED || { echo COPY_FAILED; false; }"
+            "move" -> "mv -f ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo MOVED || { echo MOVE_FAILED; false; }"
             "exists" -> "test -e ${(path ?: error("path required")).shellQuote()} && echo YES || echo NO"
-            "info" -> "ls -ld ${(path ?: error("path required for info")).shellQuote()} 2>&1"
+            "info" -> "ls -ld ${(path ?: error("path required for info")).shellQuote()} 2>&1 && true || { echo INFO_FAILED; false; }"
             else -> error("unknown action: $action")
         }
         val r = executor.execute(cmd, timeoutMillis = 120_000, mode = mode)
