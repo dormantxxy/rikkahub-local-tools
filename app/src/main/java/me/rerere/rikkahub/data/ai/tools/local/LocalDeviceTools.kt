@@ -19,6 +19,20 @@ import me.rerere.rikkahub.data.localtools.shellQuote
 /** 单次写入的分块大小：base64 后约 80KB，留足内核单个 argv 的上限余量。 */
 private const val WRITE_CHUNK_BYTES = 60 * 1024
 
+/**
+ * 已装扩展提供的全部命令名（含扩展自带的库工具）。
+ * 每次执行现算：扩展可能刚装好或刚卸载，缓存会给出过期结果。
+ */
+private fun rememberExtensionCommands(installer: ExtensionInstaller?): Set<String> {
+    if (installer == null) return emptySet()
+    return runCatching {
+        installer.installed.value.values
+            .flatMap { rec -> File(rec.payloadDir, "bin").listFiles()?.map { it.name } ?: emptyList() }
+            .toSet()
+    }.getOrDefault(emptySet())
+}
+
+
 // 精确的危险命令判断：避免 rm -rf /data/... 这类安全路径被误判
 private val DANGEROUS_PATTERNS = listOf(
     Regex("""rm\s+-rf\s+/(\s|$|;|&|\|)"""),
@@ -62,14 +76,16 @@ internal fun buildRunShellTool(
         val timeoutMs = (p["timeout_seconds"]?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.times(1000) ?: 60_000.0)
             .toLong().coerceIn(1_000L, 600_000L)
         val mode = executor.preferredMode()
-        // 自动分流：命令首词命中任一已装扩展的 payload/bin，则用聚合工具链环境执行
-        // （否则扩展二进制因缺 LD_LIBRARY_PATH 会 CANNOT LINK，系统命令 pm/am/dumpsys 则保持系统环境不被污染）
-        val firstWord = cmd.trimStart().split(Regex("""[\s;&|]""")).firstOrNull { it.isNotBlank() }?.substringAfterLast('/')
-        val useToolchain = installer != null && toolchainExecutor != null &&
-            firstWord != null &&
-            installer.installed.value.values.any { rec ->
-                File(rec.payloadDir, "bin").listFiles()?.any { it.name == firstWord } == true
-            }
+        // 自动分流：命令里出现任一已装扩展的 bin 命令，就用聚合工具链环境执行。
+        // 不能只看第一个词：`cd /x && git status` 的首词是 cd，会让 git 落到系统环境，
+        // 而扩展二进制缺 LD_LIBRARY_PATH 会直接 CANNOT LINK（实测 libpcre2-8.so not found）。
+        // 系统命令（pm/am/dumpsys）不在扩展 bin 里，仍然走系统环境，不受污染。
+        val extensionCommands = rememberExtensionCommands(installer)
+        val useToolchain = toolchainExecutor != null && extensionCommands.isNotEmpty() &&
+            cmd.split(Regex("""[\s;&|()<>`$]+"""))
+                .asSequence()
+                .map { it.substringAfterLast('/') }
+                .any { it in extensionCommands }
         val r = if (useToolchain) {
             val tr = toolchainExecutor.run(cmd, cwd = cwd, timeoutMillis = timeoutMs)
             ShellResult(tr.exitCode, tr.stdout, tr.stderr, tr.timedOut)
