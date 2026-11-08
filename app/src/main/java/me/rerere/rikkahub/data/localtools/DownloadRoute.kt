@@ -1,6 +1,13 @@
 package me.rerere.rikkahub.data.localtools
 
 import android.content.Context
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
+import java.net.HttpURLConnection
+import java.net.URL
 import me.rerere.rikkahub.ui.hooks.readStringPreference
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 
@@ -64,6 +71,49 @@ object DownloadRoute {
     }
 
     fun label(id: String): String = OPTIONS.firstOrNull { it.first == id }?.second ?: "自动（镜像优先，逐个重试）"
+
+    /** 测延时用的探测目标：Termux 侧用一个小包，GitHub 侧用一个小文件。 */
+    private const val PROBE_TERMUX_PATH = "apt/termux-main/pool/main/x/xz-utils/xz-utils_5.8.4_aarch64.deb"
+    private const val PROBE_GITHUB_URL = "https://github.com/git/git/archive/refs/tags/v2.47.0.tar.gz"
+
+    /** id -> 探测 URL；auto 不参与（它是策略）。 */
+    private fun probeUrl(id: String): String? = when (id) {
+        "official" -> "https://packages.termux.dev/" + PROBE_TERMUX_PATH
+        "github" -> PROBE_GITHUB_URL
+        in GITHUB_PROXY.keys -> GITHUB_PROXY.getValue(id) + PROBE_GITHUB_URL
+        in TERMUX_BASE.keys -> TERMUX_BASE.getValue(id) + PROBE_TERMUX_PATH.substringAfter("apt/termux-main/")
+        else -> null
+    }
+
+    /**
+     * 并发探测各源延时，返回 id -> 毫秒（失败为 null）。
+     * 只取首字节（Range: bytes=0-0）就断开，尽量不耗流量；单源 8 秒超时。
+     */
+    suspend fun measureLatency(): Map<String, Long?> = coroutineScope {
+        val ids = OPTIONS.map { it.first }.filter { it != "auto" && probeUrl(it) != null }
+        ids.map { id ->
+            async(Dispatchers.IO) {
+                val url = probeUrl(id)!!
+                val ms = withTimeoutOrNull(8_000L) {
+                    runCatching {
+                        val conn = URL(url).openConnection() as HttpURLConnection
+                        conn.connectTimeout = 8_000
+                        conn.readTimeout = 8_000
+                        conn.instanceFollowRedirects = true
+                        conn.setRequestProperty("User-Agent", "RikkaHub-MobiCode-Toolchain/1.0")
+                        conn.setRequestProperty("Range", "bytes=0-0")
+                        val t0 = System.nanoTime()
+                        val code = conn.responseCode
+                        // 读到首字节才算通
+                        runCatching { conn.inputStream.use { it.read() } }
+                        conn.disconnect()
+                        if (code in 200..399) (System.nanoTime() - t0) / 1_000_000 else null
+                    }.getOrNull()
+                }
+                id to ms
+            }
+        }.map { it.await() }.toMap()
+    }
 
     /**
      * 把原始下载 URL 转成候选列表。

@@ -57,9 +57,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -99,6 +96,8 @@ fun ToolchainsPage() {
     val toaster = LocalToaster.current
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val routeId by rememberSharedPreferenceString(DownloadRoute.PREF_KEY, "auto")
     val categories = MobiCodeCatalog.CATEGORIES
     val builtInIds = remember(vm.builtIn) { vm.builtIn.map { it.id }.toSet() }
 
@@ -247,6 +246,13 @@ fun ToolchainsPage() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 PrivilegeText(privilege = privilege, onRefresh = { vm.refreshPrivilege() }, modifier = Modifier.weight(1f))
+                DownloadRouteButton(
+                    currentId = routeId,
+                    onSelect = { id ->
+                        DownloadRoute.set(context, id)
+                        vm.ensureTermuxIndex(force = true)
+                    },
+                )
             }
             // ===== 分类页：左右滑动切换（跟手） =====
             HorizontalPager(
@@ -304,7 +310,6 @@ fun ToolchainsPage() {
                                 onInstall = { vm.install(item.ext) },
                                 onUninstall = { vm.uninstall(item.ext) },
                                 onCancel = { vm.cancelInstall(item.ext.id) },
-                                onRouteChanged = { vm.ensureTermuxIndex(force = true) },
                             )
                         }
                     }
@@ -398,13 +403,9 @@ private fun StoreCard(
     onInstall: () -> Unit,
     onUninstall: () -> Unit,
     onCancel: () -> Unit,
-    onRouteChanged: () -> Unit,
 ) {
     val ext: ToolchainExtension = item.ext
     var versionMenuExpanded by remember { mutableStateOf(false) }
-    var routeMenuExpanded by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val currentRoute by rememberSharedPreferenceString(DownloadRoute.PREF_KEY, "auto")
     val iconColor = categoryColor(ext.category)
     // 自己进行中 = busy；其他包的安装/卸载不影响本卡片按钮
     val selfBusy = progress != null || busy
@@ -470,11 +471,6 @@ private fun StoreCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    "下载路线：" + DownloadRoute.label(currentRoute ?: "auto") + "（长按安装可改）",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 if (ext.id == "mobicode.tool.git") {
                     Text(
                         "⚠ 此扩展的 HTTP 操作不可用，建议安装 Termux Git",
@@ -539,32 +535,11 @@ private fun StoreCard(
                         } else if (item.isInstalled) {
                             OutlinedButton(onClick = onUninstall, enabled = !busy) { Text("卸载") }
                             if (item.hasUpdate) {
-                                RouteInstallButton(
-                                    text = "更新",
-                                    enabled = !busy,
-                                    onInstall = onInstall,
-                                    onLongClick = { routeMenuExpanded = true },
-                                )
+                                FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("更新") }
                             }
                         } else {
-                            RouteInstallButton(
-                                text = "安装",
-                                enabled = !busy,
-                                onInstall = onInstall,
-                                onLongClick = { routeMenuExpanded = true },
-                            )
+                            FilledTonalButton(onClick = onInstall, enabled = !busy) { Text("安装") }
                         }
-                        DownloadRouteMenu(
-                            expanded = routeMenuExpanded,
-                            currentId = currentRoute ?: "auto",
-                            onDismiss = { routeMenuExpanded = false },
-                            onSelect = { id ->
-                                DownloadRoute.set(context, id)
-                                routeMenuExpanded = false
-                                // 改路线后强制刷新一次索引，让"以后"的列表也走新路线
-                                onRouteChanged()
-                            },
-                        )
                     }
                 }
             }
@@ -573,51 +548,68 @@ private fun StoreCard(
 }
 
 @Composable
-private fun RouteInstallButton(
-    text: String,
-    enabled: Boolean,
-    onInstall: () -> Unit,
-    onLongClick: () -> Unit,
-) {
-    // 只监听长按：用 Initial pass 观察、不 consume，短按原样传给 Button。
-    Box(
-        modifier = Modifier.pointerInput(enabled) {
-            awaitEachGesture {
-                val down = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull() ?: return@awaitEachGesture
-                val start = down.uptimeMillis
-                // 等抬起或长按超时；期间不消费任何事件
-                var up: Long? = null
-                while (up == null) {
-                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                    val change = event.changes.firstOrNull() ?: break
-                    if (!change.pressed) up = change.uptimeMillis
-                    else if (change.uptimeMillis - start >= 500L) {
-                        // 长按已识别：消费掉，避免松手时 Button 又当成一次点击去安装
-                        change.consume()
-                        if (enabled) onLongClick()
-                        break
-                    }
-                }
-            }
-        },
-    ) {
-        FilledTonalButton(onClick = onInstall, enabled = enabled) { Text(text) }
-    }
-}
-
-@Composable
-private fun DownloadRouteMenu(
-    expanded: Boolean,
+private fun DownloadRouteButton(
     currentId: String,
-    onDismiss: () -> Unit,
     onSelect: (String) -> Unit,
 ) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
-        DownloadRoute.OPTIONS.forEach { (id, label) ->
-            DropdownMenuItem(
-                text = { Text(if (id == currentId) "✓ $label" else label) },
-                onClick = { onSelect(id) },
+    var expanded by remember { mutableStateOf(false) }
+    // 打开菜单即并发测延时；null 表示还未测完，注释里已说明是自动的
+    var latency by remember { mutableStateOf<Map<String, Long?>?>(null) }
+    LaunchedEffect(expanded) {
+        if (expanded) {
+            latency = null
+            latency = DownloadRoute.measureLatency()
+        }
+    }
+
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(
+                "下载路线：" + DownloadRoute.label(currentId) + " ▾",
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            val measured = latency
+            // 有结果时按延时升序，未知/失败的排最后
+            // auto 是策略不是具体源，测不到延时，固定排最前；其余按延时升序，失败/未知排最后。
+            val ordered = if (measured == null) DownloadRoute.OPTIONS else {
+                val auto = DownloadRoute.OPTIONS.filter { it.first == "auto" }
+                val rest = DownloadRoute.OPTIONS.filter { it.first != "auto" }.sortedWith(
+                    compareBy({ measured[it.first] ?: Long.MAX_VALUE }, { it.second })
+                )
+                auto + rest
+            }
+            val fastest = measured?.entries?.filter { it.value != null }?.minByOrNull { it.value!! }?.key
+            ordered.forEach { (id, label) ->
+                val ms = measured?.get(id)
+                val suffix = when {
+                    measured == null -> null
+                    ms == null -> "✗ 超时"
+                    else -> "$ms ms"
+                }
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(if (id == currentId) "✓ $label" else label)
+                            if (suffix != null) {
+                                Text(
+                                    if (id == fastest) "$suffix（最快）" else suffix,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (id == fastest) MaterialTheme.colorScheme.primary
+                                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    },
+                    onClick = {
+                        onSelect(id)
+                        expanded = false
+                    },
+                )
+            }
         }
     }
 }
