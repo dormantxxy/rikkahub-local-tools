@@ -80,6 +80,8 @@ internal fun searchFiles(
     val root = File(rootPath)
     if (!root.exists()) return "路径不存在：$rootPath"
     if (!root.isDirectory) return "不是目录：$rootPath"
+    // 空正则会匹配每一行，返回满屏无用结果并刷爆上下文，直接拒绝
+    if (pattern.isBlank()) return "pattern 不能为空"
     val regex = try {
         if (caseSensitive) Regex(pattern) else Regex(pattern, RegexOption.IGNORE_CASE)
     } catch (e: Exception) {
