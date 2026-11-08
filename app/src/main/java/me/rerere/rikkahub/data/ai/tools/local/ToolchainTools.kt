@@ -115,7 +115,8 @@ internal fun buildPkgInstallTool(context: Context, installer: ExtensionInstaller
         } else {
             val result = installer.install(entry)
             result.fold(
-                onSuccess = { rec -> listOf(UIMessagePart.Text("安装成功：${rec.name} ${rec.version}（含 ${entry.depends.size} 个依赖）")) },
+                // depends 只是直接依赖，实际会递归安装传递依赖，这里不再报一个偏小的数字
+                onSuccess = { rec -> listOf(UIMessagePart.Text("安装成功：${rec.name} ${rec.version}，依赖已一并安装")) },
                 onFailure = { e -> listOf(UIMessagePart.Text("安装失败：${e.message ?: "未知错误"}")) },
             )
         }
