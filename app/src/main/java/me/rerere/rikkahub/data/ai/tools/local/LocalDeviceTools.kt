@@ -170,6 +170,7 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
             }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED || { echo DELETE_FAILED; false; }"
             "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED || { echo COPY_FAILED; false; }"
+            "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK || { echo MKDIR_FAILED; false; }"
             "move" -> "mv -f ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo MOVED || { echo MOVE_FAILED; false; }"
             "exists" -> "test -e ${(path ?: error("path required")).shellQuote()} && echo YES || echo NO"
             "info" -> "ls -ld ${(path ?: error("path required for info")).shellQuote()} 2>&1 && true || { echo INFO_FAILED; false; }"
