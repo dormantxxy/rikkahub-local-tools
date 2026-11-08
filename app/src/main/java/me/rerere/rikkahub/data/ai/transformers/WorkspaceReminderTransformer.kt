@@ -151,11 +151,11 @@ class WorkspaceReminderTransformer(
             if (commands.isNotEmpty()) {
                 appendLine("- Commands provided by installed extensions (run them with run_cli, which uses the aggregated PATH/LD_LIBRARY_PATH): " + commands.take(60).joinToString(", ") + ".")
             }
-            appendLine("- Available tools: run_shell (system commands: pm, am, dumpsys, ls, cat), run_cli (extension binaries), manage_files, search_code, file_tree, web_fetch.")
+            appendLine("- Available tools: run_shell (system commands: pm, am, dumpsys, ls, cat), run_cli (extension binaries), manage_files, search_code, list_file_tree, web_fetch.")
         } else {
             // 无 root/Shizuku 时 run_shell / run_cli / env_info 不会暴露，必须如实说明
             appendLine("- This device currently has NO root or Shizuku permission, so command execution tools are unavailable: there is no run_shell, run_cli or env_info.")
-            appendLine("- Available tools: manage_files, search_code, file_tree, web_fetch. Do file operations with manage_files only, and tell the user root or Shizuku is required for commands.")
+            appendLine("- Available tools: manage_files, search_code, list_file_tree, web_fetch. Do file operations with manage_files only, and tell the user root or Shizuku is required for commands.")
         }
         append("</workspace>")
     }
@@ -238,12 +238,12 @@ private fun buildToolchainWorkspacePrompt(
     if (hasPrivilege) {
         val commandHint = if (commands.isEmpty()) "no extensions installed yet" else commands.take(60).joinToString(", ")
         appendLine("- run_shell / run_cli runs commands through the app aggregated toolchain environment (extension commands: " + commandHint + ") with root or Shizuku privileges.")
-        appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
+        appendLine("- Available tools: manage_files (host file operations), search_code, list_file_tree, web_fetch, run_shell / run_cli (aggregated extension PATH, toolchain environment).")
     } else {
         // 无 root/Shizuku 时 run_shell / run_cli / env_info 不会暴露；
         // 必须如实说明，否则模型会反复调用不存在的工具。
         appendLine("- This device currently has NO root or Shizuku permission, so command execution tools are unavailable: there is no run_shell, run_cli or env_info.")
-        appendLine("- Available tools: manage_files (host file operations), search_code, file_tree, web_fetch.")
+        appendLine("- Available tools: manage_files (host file operations), search_code, list_file_tree, web_fetch.")
         appendLine("- You cannot run commands or execute extension binaries here. Tell the user that root or Shizuku is required for commands.")
     }
     appendLine("- There is no /workspace, /skills, /upload or /builtin_skills mount in this workspace type.")
