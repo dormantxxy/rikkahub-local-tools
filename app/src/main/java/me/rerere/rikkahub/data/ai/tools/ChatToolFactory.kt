@@ -80,11 +80,14 @@ class ChatToolFactory(
         } else {
             createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         }
-        // 设备级工具的默认工作目录：绑定工具链工作区时跟随该工作区的 files 目录；未绑定时留空，
-        // 由 LocalTools 回退到临时工作区 default/files。此前写死在构造期常量，切换绑定工作区后不会跟随。
-        val deviceWorkingDir = boundWorkspace
-            ?.takeIf { it.workspaceType() == WorkspaceType.TOOLCHAIN }
-            ?.let { workspaceRepository.workspaceFilesDir(it.id, WorkspaceType.TOOLCHAIN) }
+        // 设备级工具的默认工作目录：
+        // - 绑定工具链工作区 → 该工作区的 files 目录，并跟随会话里选的子目录（workspaceCwd 存的是绝对路径）；
+        // - 未绑定 → 留空，由 LocalTools 回退到临时工作区 default/files。
+        // 不能写死在构造期常量里，否则切换绑定工作区后不会跟随。
+        val deviceWorkingDir = if (boundWorkspace?.workspaceType() == WorkspaceType.TOOLCHAIN) {
+            val dir = workspaceRepository.workspaceFilesDir(boundWorkspace.id, WorkspaceType.TOOLCHAIN)
+            workspaceCwd?.takeIf { it.isNotBlank() && it.startsWith(dir) } ?: dir
+        } else null
         val tools = buildList {
             if (assistant.enableMemory) {
                 addAll(buildMemoryTools(memoryRepository, assistant.memoryId))
