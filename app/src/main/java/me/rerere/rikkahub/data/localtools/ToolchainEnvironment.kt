@@ -72,6 +72,8 @@ object ToolchainEnvironment {
     ): ToolchainEnv {
         val base = workDir(context)
         // 新安装的扩展优先（同名命令以最新安装的为准，如 termux.git 覆盖旧 mobicode git）。
+        val home = File(base, ".home").apply { mkdirs() }
+        val tmp = File(base, ".tmp").apply { mkdirs() }
         // 按 installedAt 降序，但时间戳可能相同（同一批安装），再按 id 兜底，
         // 否则相同 key 的排序不稳定，同一命令可能在不同次运行里指向不同扩展。
         val records = installer.installed.value.values
