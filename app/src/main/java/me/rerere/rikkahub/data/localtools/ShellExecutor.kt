@@ -205,6 +205,10 @@ class ShellExecutor(
         val full = buildString {
             append("nsenter -t 1 -m -- sh -c ")
             append((buildString {
+                // 先清掉继承来的工具链环境变量。App 进程若带有 LD_LIBRARY_PATH（工具链里 export 过），
+                // su 会原样继承，导致 screencap / pm / dumpsys 等系统二进制去加载扩展的 .so 而 CANNOT LINK
+                // （实测 screencap 报 libunwindstack.so: cannot locate symbol Xzs_Construct）。
+                append("unset LD_LIBRARY_PATH LD_PRELOAD; ")
                 // cwd 可能已被删除：用 || 兜底，避免 cd 失败后整条命令静默不执行
                 if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" || cd /; ") }
                 append(command)
