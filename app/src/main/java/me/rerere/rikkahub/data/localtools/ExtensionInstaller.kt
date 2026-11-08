@@ -248,6 +248,8 @@ class ExtensionInstaller(
         val isDeb = entry.format.equals("deb", ignoreCase = true)
         val archiveName = if (isDeb) "archive.deb" else "archive.mcext"
         val archive = File(workDir, archiveName)
+        // 提到 try 外：失败时 catch 里要清理这个半成品目录
+        val versionDir = File(extRoot, "${entry.id}/${safeVersionDirName(entry.version)}")
 
         try {
             // 1) 下载（镜像优先，实时进度）
@@ -256,7 +258,6 @@ class ExtensionInstaller(
             }
 
             // 2) 解压（实时进度）
-            val versionDir = File(extRoot, "${entry.id}/${safeVersionDirName(entry.version)}")
             versionDir.deleteRecursively()
             val payloadDir = File(versionDir, "payload")
             payloadDir.mkdirs()
