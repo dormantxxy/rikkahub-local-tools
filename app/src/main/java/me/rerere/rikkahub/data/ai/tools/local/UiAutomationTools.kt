@@ -122,6 +122,18 @@ internal fun buildScreenshotTool(context: Context, executor: ShellExecutor): Too
         }.toString()
         // 截图是二进制文件，只回路径模型看不到内容；转成聊天图片部件回传。
         val bytes = runCatching { if (out.exists() && out.length() > 0) out.readBytes() else null }.getOrNull()
+        // 原图已经复制进 upload 目录，这份临时 PNG 没用了必须删掉：
+        // 每张约 1.5MB，不删会无限堆积。文件由 root 的 screencap 生成，
+        // App 自己 delete() 删不掉（属主是 root），只能借 shell 权限删。
+        runCatching {
+            if (!out.delete()) {
+                executor.execute(
+                    "rm -f ${out.absolutePath.shellQuote()} 2>/dev/null",
+                    timeoutMillis = 5_000,
+                    mode = mode,
+                )
+            }
+        }
         if (bytes == null) {
             listOf(UIMessagePart.Text(text))
         } else {
