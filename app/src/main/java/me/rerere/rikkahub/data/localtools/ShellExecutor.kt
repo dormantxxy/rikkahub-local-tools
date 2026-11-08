@@ -53,6 +53,18 @@ class ShellExecutor(
             "/sbin:/system/bin:/system/xbin:/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin"
     }
 
+    /**
+     * run_shell 的 HOME / TMPDIR。之前 root 模式下 HOME=/、TMPDIR 为空，
+     * 导致 mktemp、$TMPDIR 这类全都失败（mktemp 会去用不存在的 /tmp）。
+     * 与 run_cli 保持一致，统一指向 App 私有目录。
+     */
+    private val homeDir: String by lazy {
+        File(context.filesDir, "RikkaHub/.home").apply { mkdirs() }.absolutePath
+    }
+    private val tmpDir: String by lazy {
+        File(context.filesDir, "RikkaHub/.tmp").apply { mkdirs() }.absolutePath
+    }
+
     @Volatile private var rootChecked = false
     @Volatile private var rootAvailable = false
 
@@ -226,6 +238,8 @@ class ShellExecutor(
             if (dir.isDirectory) b.directory(dir)
         }
         b.environment()["PATH"] = HOST_PATH
+        b.environment()["HOME"] = homeDir
+        b.environment()["TMPDIR"] = tmpDir
         val p = b.start()
         // 需要往 stdin 写数据时必须保持管道打开，否则写入立刻失败
         if (!keepStdinOpen) runCatching { p.outputStream.close() }
@@ -243,6 +257,9 @@ class ShellExecutor(
                 // su 会原样继承，导致 screencap / pm / dumpsys 等系统二进制去加载扩展的 .so 而 CANNOT LINK
                 // （实测 screencap 报 libunwindstack.so: cannot locate symbol Xzs_Construct）。
                 append("unset LD_LIBRARY_PATH LD_PRELOAD; ")
+                // root 默认 HOME=/、TMPDIR 为空，mktemp / $TMPDIR 会失败；统一到 App 私有目录
+                append("export HOME=").append(homeDir.shellQuote()).append("; ")
+                append("export TMPDIR=").append(tmpDir.shellQuote()).append("; ")
                 // cwd 可能已被删除：用 || 兜底，避免 cd 失败后整条命令静默不执行
                 if (!cwd.isNullOrBlank()) { append("cd "); append(cwd.shellQuote()); append(" || cd /; ") }
                 append(command)
@@ -283,7 +300,23 @@ class ShellExecutor(
      * 所以必须借 su 以 root 身份递归杀，并用 pgrep 逐层找子进程（pkill -P 只杀一层）。
      */
     private fun killTree(process: Process) {
-        val pid = process.pid()
+        // 注意：Android 的 java.lang.Process 没有 Java 9 的 pid()，直接调用会抛
+        // NoSuchMethodError（实测导致整个工具调用失败）。这里反射读实现类的 pid 字段，
+        // 拿不到就只做 destroyForcibly，绝不能让清理动作把主流程带崩。
+        val pid = runCatching {
+            var cls: Class<*>? = process.javaClass
+            var found = -1L
+            while (cls != null && cls != Any::class.java) {
+                val f = runCatching { cls!!.getDeclaredField("pid") }.getOrNull()
+                if (f != null) {
+                    f.isAccessible = true
+                    found = (f.get(process) as Number).toLong()
+                    break
+                }
+                cls = cls.superclass
+            }
+            found
+        }.getOrDefault(-1L)
         if (pid > 0) {
             val cmd = "killtree() { for c in \$(/system/bin/pgrep -P \$1 2>/dev/null); do killtree \$c; done; kill -9 \$1 2>/dev/null; }; killtree $pid"
             val killedByRoot = runCatching {
