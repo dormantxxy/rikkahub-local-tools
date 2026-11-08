@@ -83,11 +83,27 @@ internal fun buildRunShellTool(
         // 而扩展二进制缺 LD_LIBRARY_PATH 会直接 CANNOT LINK（实测 libpcre2-8.so not found）。
         // 系统命令（pm/am/dumpsys）不在扩展 bin 里，仍然走系统环境，不受污染。
         val extensionCommands = rememberExtensionCommands(installer)
+        // 只看每条子命令的「命令词」，不能看所有 token：`echo git`、`pm list packages | grep git`
+        // 只是参数里出现扩展命令名，若整条被判进工具链环境，系统程序会被扩展的 LD_LIBRARY_PATH 污染。
+        // 命令词 = 跳过 VAR=value 赋值与 shell 包装词（do/then/xargs/env…）后的第一个词，
+        // 这样 `for f in *; do rg $f; done`、`xargs git` 也能正确识别。
+        val shellWrappers = setOf(
+            "do", "then", "else", "elif", "if", "while", "until",
+            "time", "env", "nohup", "xargs", "command", "exec", "nice", "stdbuf", "sudo",
+        )
         val useToolchain = toolchainExecutor != null && extensionCommands.isNotEmpty() &&
-            cmd.split(Regex("""[\s;&|()<>`$]+"""))
+            cmd.split(Regex("""[;&|]+"""))
                 .asSequence()
-                .map { it.substringAfterLast('/') }
-                .any { it in extensionCommands }
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .any { sub ->
+                    val commandWord = sub.split(Regex("""\s+"""))
+                        .filter { w -> w.isNotBlank() && !w.contains('=') && w !in shellWrappers }
+                        .firstOrNull()
+                        ?.substringAfterLast('/')
+                        ?: ""
+                    commandWord in extensionCommands
+                }
         val r = if (useToolchain) {
             val tr = toolchainExecutor.run(cmd, cwd = cwd, timeoutMillis = timeoutMs)
             ShellResult(tr.exitCode, tr.stdout, tr.stderr, tr.timedOut)
@@ -129,6 +145,15 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
         // 否则像 write { path: "a.txt" } 会错误写到 /a.txt 并因只读而失败。
         fun resolveWorkspacePath(raw: String): String =
             if (raw.startsWith("/")) raw else java.io.File(defaultDir, raw).path
+        // cp/mv（toybox）不拒绝「目标在源目录内部」：cp -rf a a/b/inner 会无限递归
+        // （实测产生 1009 层嵌套目录；目录里若有大文件会成倍复制）。这里先挡住。
+        fun ensureNotNested(srcPath: String, dstPath: String, verb: String) {
+            val srcCanon = runCatching { java.io.File(srcPath).canonicalPath }.getOrNull() ?: return
+            val dstCanon = runCatching { java.io.File(dstPath).canonicalPath }.getOrNull() ?: return
+            if (dstCanon == srcCanon || dstCanon.startsWith(srcCanon + java.io.File.separator)) {
+                error("不能把路径${verb}到它自己的子目录里（会无限递归）")
+            }
+        }
         val path = p["path"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
             ?.let(::resolveWorkspacePath)
         val dst = p["dst"]?.jsonPrimitive?.contentOrNull?.takeIf { s -> s.isNotBlank() }
@@ -169,15 +194,28 @@ internal fun buildManageFilesTool(executor: ShellExecutor, defaultDir: String): 
             "read" -> {
                 val pth = path ?: error("path is required for read")
                 val q = pth.shellQuote()
-                // 超过 60KB 只取前 60KB，并在末尾标注真实大小，否则模型会把半截文件当成完整内容
-                "sz=\$(wc -c < $q 2>/dev/null || echo 0); " +
+                // 目录/不存在必须以非零退出：否则 exit_code=0，模型会把「Is a directory」
+                // 这类错误输出当成文件正文。超过 60KB 只取前 60KB 并在末尾标注真实大小。
+                "if [ -d $q ]; then echo '[error] path is a directory'; exit 1; fi; " +
+                    "if [ ! -e $q ]; then echo '[error] file not found'; exit 1; fi; " +
+                    "sz=\$(wc -c < $q 2>/dev/null || echo 0); " +
                     "cat $q 2>&1 | head -c 60000; " +
                     "if [ \"\$sz\" -gt 60000 ] 2>/dev/null; then echo; echo \"[truncated: \$sz bytes total, first 60000 shown]\"; fi"
             }
             "delete" -> "rm -rf ${(path ?: error("path is required for delete")).shellQuote()} 2>&1 && echo DELETED || { echo DELETE_FAILED; false; }"
-            "copy" -> "cp -rf ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo COPIED || { echo COPY_FAILED; false; }"
+            "copy" -> {
+                val src = path ?: error("path required")
+                val d = dst ?: error("dst required")
+                ensureNotNested(src, d, "复制")
+                "cp -rf ${src.shellQuote()} ${d.shellQuote()} 2>&1 && echo COPIED || { echo COPY_FAILED; false; }"
+            }
             "mkdir" -> "mkdir -p ${(path ?: error("path is required for mkdir")).shellQuote()} 2>&1 && echo MKDIR_OK || { echo MKDIR_FAILED; false; }"
-            "move" -> "mv -f ${(path ?: error("path required")).shellQuote()} ${(dst ?: error("dst required")).shellQuote()} 2>&1 && echo MOVED || { echo MOVE_FAILED; false; }"
+            "move" -> {
+                val src = path ?: error("path required")
+                val d = dst ?: error("dst required")
+                ensureNotNested(src, d, "移动")
+                "mv -f ${src.shellQuote()} ${d.shellQuote()} 2>&1 && echo MOVED || { echo MOVE_FAILED; false; }"
+            }
             "exists" -> "test -e ${(path ?: error("path required")).shellQuote()} && echo YES || echo NO"
             "info" -> "ls -ld ${(path ?: error("path required for info")).shellQuote()} 2>&1 && true || { echo INFO_FAILED; false; }"
             else -> error("unknown action: $action")
