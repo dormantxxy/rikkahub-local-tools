@@ -237,10 +237,13 @@ class WorkspaceRepository(
         if (workspace.isSsh()) {
             workspace.sshSettings()?.let { SshWorkspaceBackend.layoutOf(it.remoteDir) }
         } else if (workspace.workspaceType() == WorkspaceType.TOOLCHAIN) {
-            // 工具链工作区没有 rootfs 挂载点，直接使用宿主机绝对路径
+            // 工具链工作区没有 rootfs 挂载点，直接使用宿主机绝对路径。
+            // 用 manager 算出来的真实路径，不能抄硬编码常量：
+            // 外部存储不可写时 manager 会回退到 App 私有目录，硬编码的路径就指错了。
+            val dir = manager.filesDir(workspace.root, WorkspaceType.TOOLCHAIN).absolutePath
             WorkspaceLayout(
-                workspaceDir = workspace.workspaceDir(),
-                writableRoots = listOf(workspace.workspaceDir()),
+                workspaceDir = dir,
+                writableRoots = listOf(dir),
             )
         } else {
             manager.layout

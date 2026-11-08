@@ -133,6 +133,10 @@ internal fun FilesPicker(
         workspaces.find { it.id == assistant.workspaceId?.toString() }
     }
     val showCwd = boundWorkspace != null && boundWorkspace.shellStatus == WorkspaceShellStatus.READY.name
+    // 工具链工作区的真实目录：外部存储不可写时会回退到 App 私有目录，不能抄硬编码路径
+    val boundWorkspaceDir = remember(boundWorkspace) {
+        boundWorkspace?.let { workspaceRepository.workspaceFilesDir(it.id, it.workspaceType()) }
+    }
     var showCwdSheet by remember { mutableStateOf(false) }
 
     var page by remember { mutableStateOf(FilesPickerPage.MAIN) }
@@ -266,7 +270,7 @@ internal fun FilesPicker(
                                 },
                             ) {
                                 Text(
-                                    text = conversation.workspaceCwd ?: boundWorkspace?.workspaceDir().orEmpty(),
+                                    text = conversation.workspaceCwd ?: boundWorkspaceDir.orEmpty(),
                                     // 路径的末尾更有辨识度，放不下时省略开头
                                     maxLines = 1,
                                     overflow = TextOverflow.StartEllipsis,
@@ -362,7 +366,7 @@ internal fun FilesPicker(
     if (showCwdSheet && boundWorkspace != null) {
         WorkspaceCwdPickerSheet(
             workspaceId = boundWorkspace.id,
-            workspaceDir = boundWorkspace.workspaceDir(),
+            workspaceDir = boundWorkspaceDir.orEmpty(),
             currentCwd = conversation.workspaceCwd,
             onSelectCwd = { newCwd ->
                 onUpdateWorkspaceCwd(newCwd)

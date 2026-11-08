@@ -45,9 +45,25 @@ class WorkspaceManager(
     ): WorkspaceBackend =
         LocalWorkspaceBackend(this, root, shellCompatibilityMode, type)
 
-    /** 某个工作区应该用的根目录：工具链工作区优先用公共目录。 */
-    private fun baseDirFor(type: WorkspaceType): File =
-        if (type == WorkspaceType.TOOLCHAIN && toolchainBaseDir != null) toolchainBaseDir else baseDir
+    /**
+     * 某个工作区应该用的根目录：工具链工作区优先用公共目录。
+     * 公共目录在外部存储上，只有拿到「所有文件访问」才可写。
+     * 拿不到时必须回退到 App 私有目录，否则工具链工作区的文件区完全不可用。
+     */
+    private fun baseDirFor(type: WorkspaceType): File {
+        val external = toolchainBaseDir
+        if (type == WorkspaceType.TOOLCHAIN && external != null && isWritableDir(external)) return external
+        return baseDir
+    }
+
+    /** 目录存在且可写（mkdirs 之后再写入探针确认，避免只读挂载）。 */
+    private fun isWritableDir(dir: File): Boolean = runCatching {
+        dir.mkdirs()
+        val probe = File(dir, ".probe_" + System.nanoTime())
+        probe.writeText("x")
+        probe.delete()
+        true
+    }.getOrDefault(false)
 
     fun ensureWorkspace(root: String, type: WorkspaceType = WorkspaceType.LOCAL): File {
         val dir = workspaceDir(root, type)
