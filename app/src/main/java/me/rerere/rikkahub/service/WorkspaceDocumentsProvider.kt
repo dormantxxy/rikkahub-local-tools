@@ -14,6 +14,7 @@ import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.db.dao.WorkspaceDAO
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.workspace.WorkspaceManager
+import me.rerere.workspace.WorkspaceType
 import org.koin.core.context.GlobalContext
 import java.io.File
 
@@ -44,6 +45,18 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
 
     private fun workspaceName(root: String): String =
         allWorkspaces().firstOrNull { it.root == root }?.name ?: root
+
+    /**
+     * root 对应的工作区类型。工具链工作区的 files 目录在外部公共目录，
+     * 若按默认 LOCAL 取目录会指向 App 私有的空目录，系统文件管理器里就看不到真实文件。
+     * 工作区创建后类型不会变，缓存起来避免列目录时每个文件都查一次数据库。
+     */
+    private val workspaceTypes = java.util.concurrent.ConcurrentHashMap<String, WorkspaceType>()
+
+    private fun workspaceTypeOf(root: String): WorkspaceType =
+        workspaceTypes.getOrPut(root) {
+            allWorkspaces().firstOrNull { it.root == root }?.workspaceType() ?: WorkspaceType.LOCAL
+        }
 
     override fun onCreate(): Boolean = true
 
@@ -95,7 +108,7 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
         if (parent.isRoot) {
             // 顶层：列出所有 workspace
             for (ws in allWorkspaces()) {
-                val dir = manager().filesDir(ws.root).also { it.mkdirs() }
+                val dir = manager().filesDir(ws.root, ws.workspaceType()).also { it.mkdirs() }
                 addFileRow(cursor, ws.root, dir)
             }
         } else {
@@ -274,13 +287,13 @@ class WorkspaceDocumentsProvider : DocumentsProvider() {
 
     /** 将 workspace files 目录下的文件解析为相对路径（root 自身返回空串） */
     private fun relPathOf(root: String, file: File): String {
-        val base = manager().filesDir(root).canonicalFile
+        val base = manager().filesDir(root, workspaceTypeOf(root)).canonicalFile
         return file.canonicalFile.relativeTo(base).path.replace(File.separatorChar, '/')
     }
 
     /** 解析 documentId 指向的实际文件，并校验路径不逃逸 workspace files 目录 */
     private fun resolveFile(root: String, relPath: String): File {
-        val base = manager().filesDir(root).canonicalFile
+        val base = manager().filesDir(root, workspaceTypeOf(root)).canonicalFile
         base.mkdirs()
         val normalized = relPath.trim().trimStart('/')
         require(!normalized.contains('\u0000')) { "Path contains invalid character" }
