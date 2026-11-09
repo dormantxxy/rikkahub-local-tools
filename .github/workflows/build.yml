@@ -121,12 +121,6 @@ jobs:
           RIKKAHUB_VERSION_BUMP: ${{ github.run_number }}
         run: ./gradlew assembleGithubRelease --no-daemon --max-workers=2 --stacktrace -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rikkahub-local-tools-apk
-          path: app/build/outputs/apk/github/release/*.apk
-
       - name: Publish Release (new tag every build)
         if: success()
         uses: softprops/action-gh-release@v2
