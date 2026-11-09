@@ -118,7 +118,7 @@ object DownloadRoute {
     /**
      * 把原始下载 URL 转成候选列表。
      * - auto：保留调用方原来的多候选顺序（由 [fallback] 提供）。
-     * - 指定路线：只返回那一条；若该路线不适用于此 URL 类型，则回退原 URL。
+     * - 指定路线：只返回那一条；若该路线不适用于此 URL 类型，则回退到 auto 的完整候选列表。
      */
     fun candidates(
         context: Context,
@@ -131,13 +131,13 @@ object DownloadRoute {
             urlStr.contains("packages.termux.dev", true) -> {
                 val path = urlStr.substringAfter("packages.termux.dev/apt/termux-main/", "")
                 val base = TERMUX_BASE[id]
-                if (base != null && path.isNotBlank()) listOf(base + path) else listOf(urlStr)
+                if (base != null && path.isNotBlank()) listOf(base + path) else fallback
             }
             urlStr.contains("github.com", true) -> {
                 val prefix = GITHUB_PROXY[id]
-                if (prefix != null) listOf(prefix + urlStr) else listOf(urlStr)
+                if (prefix != null) listOf(prefix + urlStr) else fallback
             }
-            else -> listOf(urlStr)
+            else -> fallback
         }
     }
 
