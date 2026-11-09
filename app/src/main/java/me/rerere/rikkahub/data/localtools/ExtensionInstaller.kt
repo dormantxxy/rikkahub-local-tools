@@ -415,7 +415,9 @@ class ExtensionInstaller(
     private fun mirrorCandidates(urlStr: String): List<String> {
         val fallback = when {
             urlStr.contains("github.com", ignoreCase = true) ->
-                GITHUB_MIRRORS.map { it + urlStr } + urlStr
+                // 实测直连 GitHub 重定向到 CDN (release-assets.githubusercontent.com) ~3.9MB/s 最快，
+                // 镜像反而较慢 (~0.1-0.3MB/s)，所以原始 URL 优先
+                listOf(urlStr) + GITHUB_MIRRORS.map { it + urlStr }
             urlStr.contains("packages.termux.dev", ignoreCase = true) -> {
                 val path = urlStr.substringAfter("packages.termux.dev/apt/termux-main/", "")
                 if (path.isBlank()) listOf(urlStr)
