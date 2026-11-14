@@ -86,4 +86,8 @@ sealed class LocalToolOption {
     @Serializable
     @SerialName("app_manager")
     data object AppManager : LocalToolOption()
+
+    @Serializable
+    @SerialName("phone_use")
+    data object PhoneUse : LocalToolOption()
 }

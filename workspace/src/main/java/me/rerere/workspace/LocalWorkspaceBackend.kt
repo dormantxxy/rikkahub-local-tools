@@ -9,26 +9,25 @@ class LocalWorkspaceBackend(
     private val manager: WorkspaceManager,
     private val root: String,
     private val shellCompatibilityMode: Boolean = false,
-    private val type: WorkspaceType = WorkspaceType.LOCAL,
 ) : WorkspaceBackend {
     override val layout: WorkspaceLayout
         get() = manager.layout
 
-    override fun shell(): String = manager.rootfsShell(root, type)
+    override fun shell(): String = manager.rootfsShell(root)
 
     override fun listFiles(area: WorkspaceStorageArea, path: String): List<WorkspaceFileEntry> {
-        manager.ensureWorkspace(root, type)
-        return manager.listFiles(root, path, area, type)
+        manager.ensureWorkspace(root)
+        return manager.listFiles(root, path, area)
     }
 
     override fun readText(path: String): String {
-        manager.ensureWorkspace(root, type)
-        return manager.readText(root, path, type = type)
+        manager.ensureWorkspace(root)
+        return manager.readText(root, path)
     }
 
     override fun writeText(path: String, text: String, overwrite: Boolean): WorkspaceFileEntry {
-        manager.ensureWorkspace(root, type)
-        return manager.writeText(root, path, text, overwrite, type = type)
+        manager.ensureWorkspace(root)
+        return manager.writeText(root, path, text, overwrite)
     }
 
     override fun importFile(
@@ -37,27 +36,27 @@ class LocalWorkspaceBackend(
         fileName: String,
         inputStream: InputStream,
     ): WorkspaceFileEntry {
-        manager.ensureWorkspace(root, type)
-        return manager.importFile(root, destinationPath, area, fileName, inputStream, type)
+        manager.ensureWorkspace(root)
+        return manager.importFile(root, destinationPath, area, fileName, inputStream)
     }
 
     override fun fileSize(area: WorkspaceStorageArea, path: String): Long =
-        manager.fileSize(root, path, area, type)
+        manager.fileSize(root, path, area)
 
     override fun exportFile(area: WorkspaceStorageArea, path: String, outputStream: OutputStream) =
-        manager.exportFile(root, path, area, outputStream, type)
+        manager.exportFile(root, path, area, outputStream)
 
     override fun deleteFile(area: WorkspaceStorageArea, path: String, recursive: Boolean): Boolean =
-        manager.deleteFile(root, path, recursive, area, type)
+        manager.deleteFile(root, path, recursive, area)
 
     override fun absoluteFileSize(path: String): Long {
-        manager.ensureWorkspace(root, type)
-        return manager.rootfsFileSize(root, path, type)
+        manager.ensureWorkspace(root)
+        return manager.rootfsFileSize(root, path)
     }
 
     override fun exportAbsoluteFile(path: String, outputStream: OutputStream) {
-        manager.ensureWorkspace(root, type)
-        manager.exportRootfsFile(root, path, outputStream, type)
+        manager.ensureWorkspace(root)
+        manager.exportRootfsFile(root, path, outputStream)
     }
 
     // 在 Rootfs 内用 shell 写入: Rootfs 里的绝对路径软链只有 PRoot 内才能正确解析
@@ -88,11 +87,11 @@ class LocalWorkspaceBackend(
     }
 
     override fun localFile(area: WorkspaceStorageArea, path: String): File {
-        manager.ensureWorkspace(root, type)
-        return manager.resolveFile(root, path, area, type)
+        manager.ensureWorkspace(root)
+        return manager.resolveFile(root, path, area)
     }
 
-    override fun localAbsoluteFile(path: String): File = manager.resolveRootfsFile(root, path, type)
+    override fun localAbsoluteFile(path: String): File = manager.resolveRootfsFile(root, path)
 
     override fun executeCommand(
         command: String,
@@ -100,7 +99,7 @@ class LocalWorkspaceBackend(
         timeoutMillis: Long,
         stdin: ByteArray?,
     ): WorkspaceCommandResult {
-        manager.ensureWorkspace(root, type)
+        manager.ensureWorkspace(root)
         return manager.executeCommand(
             root = root,
             command = command,
@@ -108,8 +107,12 @@ class LocalWorkspaceBackend(
             timeoutMillis = timeoutMillis,
             stdin = stdin,
             shellCompatibilityMode = shellCompatibilityMode,
-            type = type,
         )
+    }
+
+    override fun startBackgroundCommand(command: String, cwd: String, id: String): WorkspaceBackgroundCommand {
+        manager.ensureWorkspace(root)
+        return manager.startBackgroundCommand(root, command, cwd, id, shellCompatibilityMode)
     }
 
     private fun runCommand(action: String, command: String, stdin: ByteArray?): WorkspaceCommandResult {

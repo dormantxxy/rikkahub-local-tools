@@ -208,7 +208,7 @@ class WorkspaceTerminalSessionManager internal constructor(
                 workspaceRepository.openSshShell(workspace, columns, rows)
             }
         } else {
-            workspaceManager.terminalLaunch(workspace.root, workspace.shellCompatibilityMode, workspace.workspaceType())?.toTransport()
+            workspaceManager.terminalLaunch(workspace.root, workspace.shellCompatibilityMode)?.toTransport()
                 ?: error("Interactive terminal is not supported")
         }
 

@@ -10,6 +10,7 @@ import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainInstallQueue
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -108,6 +109,14 @@ val appModule = module {
             localTools = get(),
             mcpManager = get(),
             skillManager = get(),
+            workspaceRepository = get(),
+            backgroundShellManager = get(),
+        )
+    }
+
+    single {
+        BackgroundShellManager(
+            context = get(),
             workspaceRepository = get(),
         )
     }

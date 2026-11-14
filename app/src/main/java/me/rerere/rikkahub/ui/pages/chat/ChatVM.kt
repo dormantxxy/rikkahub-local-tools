@@ -12,6 +12,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.analytics.FirebaseAnalytics
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,8 +41,11 @@ import me.rerere.rikkahub.data.model.NodeFavoriteTarget
 import me.rerere.rikkahub.data.model.getAssistantOf
 import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.repository.FavoriteRepository
+import me.rerere.rikkahub.service.BackgroundShellManager
+import me.rerere.rikkahub.service.BackgroundShellTask
 import me.rerere.rikkahub.service.ChatError
 import me.rerere.rikkahub.service.ChatService
+import me.rerere.rikkahub.service.SessionActivity
 import me.rerere.rikkahub.ui.hooks.writeStringPreference
 import me.rerere.rikkahub.ui.hooks.ChatInputState
 import me.rerere.rikkahub.utils.UiState
@@ -58,8 +62,10 @@ class ChatVM(
     private val settingsStore: SettingsStore,
     private val chatService: ChatService,
     val updateChecker: UpdateChecker,
+    private val analytics: FirebaseAnalytics,
     private val filesManager: FilesManager,
     private val favoriteRepository: FavoriteRepository,
+    private val backgroundShellManager: BackgroundShellManager,
 ) : ViewModel() {
     private val _conversationId: Uuid = Uuid.parse(id)
     val conversation: StateFlow<Conversation> = chatService.getConversationFlow(_conversationId)
@@ -76,6 +82,11 @@ class ChatVM(
     val conversationJob: StateFlow<Job?> =
         chatService
             .getGenerationJobStateFlow(_conversationId)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val sessionActivity: StateFlow<SessionActivity?> =
+        chatService
+            .getActivityFlow(_conversationId)
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val processingStatus: StateFlow<String?> =
@@ -133,16 +144,23 @@ class ChatVM(
 
     fun clearAllErrors() = chatService.clearAllErrors()
 
-    val messageQueue = chatService.getMessageQueueFlow(_conversationId)
+    val messageQueue = chatService.getInboxFlow(_conversationId)
 
-    fun removeQueuedMessage(id: Uuid) = chatService.removeQueuedMessage(_conversationId, id)
+    fun removeQueuedMessage(id: Uuid) = chatService.removeInboxItem(_conversationId, id)
 
     fun beginEditQueuedMessage(id: Uuid) = chatService.beginEditQueuedMessage(_conversationId, id)
 
     fun finishEditQueuedMessage(id: Uuid, parts: List<UIMessagePart>?) =
         chatService.finishEditQueuedMessage(_conversationId, id, parts)
 
-    fun resumeMessageQueue() = chatService.resumeMessageQueue(_conversationId)
+    fun resumeMessageQueue() = chatService.resumeInbox(_conversationId)
+
+    // 这个会话启动的后台命令，按启动时间排序
+    val backgroundTasks: StateFlow<List<BackgroundShellTask>> = backgroundShellManager.tasks
+        .map { tasks -> tasks.values.filter { it.conversationId == _conversationId }.sortedBy { it.startedAt } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    suspend fun stopBackgroundTask(id: String) = backgroundShellManager.stop(id)
 
     // 生成完成
     val generationDoneFlow: SharedFlow<Uuid> = chatService.generationDoneFlow
@@ -211,7 +229,7 @@ class ChatVM(
         }
         .distinctUntilChanged()
         .flatMapLatest { enabled ->
-            if (false && enabled) updateChecker.updateState else flowOf(UiState.Loading)
+            if (enabled) updateChecker.updateState else flowOf(UiState.Loading)
         }
         .stateIn(
             viewModelScope,
@@ -227,12 +245,14 @@ class ChatVM(
      */
     fun handleMessageSend(content: List<UIMessagePart>,answer: Boolean = true) {
         if (content.isEmptyInputMessage()) return
+        analytics.logEvent("ai_send_message", null)
 
         chatService.sendMessage(_conversationId, content, answer)
     }
 
     fun handleMessageEdit(parts: List<UIMessagePart>, messageId: Uuid) {
         if (parts.isEmptyInputMessage()) return
+        analytics.logEvent("ai_edit_message", null)
 
         viewModelScope.launch {
             chatService.editMessage(_conversationId, messageId, parts)
@@ -266,6 +286,7 @@ class ChatVM(
     }
 
     fun regenerateAtMessage(message: UIMessage) {
+        analytics.logEvent("ai_regenerate_at_message", null)
         chatService.regenerateAtMessage(_conversationId, message.id)
     }
 
@@ -274,6 +295,7 @@ class ChatVM(
         approved: Boolean,
         reason: String = ""
     ) {
+        analytics.logEvent("ai_tool_approval", null)
         chatService.handleToolApproval(_conversationId, toolCallId, approved, reason)
     }
 
@@ -281,6 +303,7 @@ class ChatVM(
         toolCallId: String,
         answer: String,
     ) {
+        analytics.logEvent("ai_tool_answer", null)
         chatService.handleToolApproval(_conversationId, toolCallId, approved = true, answer = answer)
     }
 

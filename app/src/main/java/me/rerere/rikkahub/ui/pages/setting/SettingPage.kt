@@ -2,10 +2,6 @@ package me.rerere.rikkahub.ui.pages.setting
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -59,8 +55,8 @@ import me.rerere.hugeicons.stroke.Clapping01
 import me.rerere.hugeicons.stroke.Database02
 import me.rerere.hugeicons.stroke.GlobalSearch
 import me.rerere.hugeicons.stroke.Image02
-import me.rerere.hugeicons.stroke.FolderOpen
 import me.rerere.hugeicons.stroke.ImageUpload
+import me.rerere.hugeicons.stroke.InLove
 import me.rerere.hugeicons.stroke.LookTop
 import me.rerere.hugeicons.stroke.McpServer
 import me.rerere.hugeicons.stroke.Megaphone01
@@ -82,6 +78,10 @@ import me.rerere.rikkahub.ui.components.ui.CardGroup
 import me.rerere.rikkahub.ui.components.ui.CardGroupIcon
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceButtons
 import me.rerere.rikkahub.ui.components.ui.ConnectedChoiceLabel
+import me.rerere.rikkahub.ui.components.ui.permission.LocalNetworkPermissionCard
+import me.rerere.rikkahub.ui.components.ui.permission.NotificationPermissionCard
+import me.rerere.rikkahub.ui.components.ui.permission.rememberLocalNetworkPermissionState
+import me.rerere.rikkahub.ui.components.ui.permission.rememberNotificationPermissionState
 import me.rerere.rikkahub.ui.context.LocalNavController
 import me.rerere.rikkahub.ui.hooks.rememberColorMode
 import me.rerere.rikkahub.ui.theme.ColorMode
@@ -100,7 +100,36 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     val navController = LocalNavController.current
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val launchCount by vm.launchCount.collectAsStateWithLifecycle()
     val filesManager: FilesManager = koinInject()
+    val localNetworkPermission = rememberLocalNetworkPermissionState()
+    val notificationPermission = rememberNotificationPermissionState()
+
+    if (!settings.init && launchCount > 100 && (launchCount - settings.sponsorAlertDismissedAt) >= 50) {
+        AlertDialog(
+            onDismissRequest = {
+                vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+            },
+            icon = { Icon(HugeIcons.WavingHand01, null) },
+            title = { Text(stringResource(R.string.setting_page_sponsor_alert_title)) },
+            text = { Text(stringResource(R.string.setting_page_sponsor_alert_desc)) },
+            confirmButton = {
+                Button(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                    navController.navigate(Screen.SettingDonate)
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    vm.updateSettings { it.copy(sponsorAlertDismissedAt = launchCount) }
+                }) {
+                    Text(stringResource(R.string.setting_page_sponsor_alert_dismiss))
+                }
+            },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -128,6 +157,18 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                     ProviderConfigWarningCard(
                         onClick = { navController.navigate(Screen.SettingProvider) }
                     )
+                }
+            }
+
+            if (localNetworkPermission?.allRequiredPermissionsGranted == false) {
+                item("localNetworkPermission") {
+                    LocalNetworkPermissionCard(permissionState = localNetworkPermission)
+                }
+            }
+
+            if (notificationPermission?.allRequiredPermissionsGranted == false) {
+                item("notificationPermission") {
+                    NotificationPermissionCard(permissionState = notificationPermission)
                 }
             }
 
@@ -245,7 +286,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                 val storageState by produceState(-1 to 0L) {
                     value = filesManager.countChatFiles()
                 }
-                val ctx = LocalContext.current
                 val containerColor = MaterialTheme.colorScheme.secondaryContainer
                 val contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                 CardGroup(
@@ -274,35 +314,6 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                             }
                         },
                         headlineContent = { Text(stringResource(R.string.setting_page_chat_storage)) },
-                    )
-                    // 所有文件访问（MANAGE_EXTERNAL_STORAGE 是特殊权限，需跳系统设置授权）
-                    item(
-                        onClick = {
-                            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                                Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                                    data = Uri.parse("package:" + ctx.packageName)
-                                }
-                            } else {
-                                Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                            }
-                            runCatching { ctx.startActivity(intent) }
-                                .onFailure {
-                                    ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                        data = Uri.parse("package:" + ctx.packageName)
-                                    })
-                                }
-                        },
-                        leadingContent = { CardGroupIcon(HugeIcons.FolderOpen, containerColor = containerColor, contentColor = contentColor) },
-                        supportingContent = {
-                            Text(
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && Environment.isExternalStorageManager()) {
-                                    "已授权：临时文件将保存到 /storage/emulated/0/RikkaHub/tmp"
-                                } else {
-                                    "未授权：临时文件保存到 App 私有目录（点击授权后可保存到公共目录）"
-                                }
-                            )
-                        },
-                        headlineContent = { Text("所有文件访问") },
                     )
                 }
             }
@@ -374,6 +385,12 @@ fun SettingPage(vm: SettingVM = koinViewModel()) {
                         leadingContent = { CardGroupIcon(HugeIcons.Bookshelf01, containerColor = containerColor, contentColor = contentColor) },
                         supportingContent = { Text(stringResource(R.string.setting_page_request_logs_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_page_request_logs)) },
+                    )
+                    item(
+                        onClick = { navController.navigate(Screen.SettingDonate) },
+                        leadingContent = { CardGroupIcon(HugeIcons.InLove, containerColor = containerColor, contentColor = contentColor) },
+                        supportingContent = { Text(stringResource(R.string.setting_page_donate_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_page_donate)) },
                     )
                     item(
                         onClick = {

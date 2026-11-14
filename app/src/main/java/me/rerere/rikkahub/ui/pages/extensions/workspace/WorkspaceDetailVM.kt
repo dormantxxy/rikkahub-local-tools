@@ -20,6 +20,7 @@ import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.workspace.RootfsInstallProgress
 import me.rerere.workspace.RootfsInstallStage
 import me.rerere.workspace.WorkspaceCommandResult
@@ -36,6 +37,7 @@ class WorkspaceDetailVM(
     private val terminalSessionManager: WorkspaceTerminalSessionManager,
     private val shellExecutor: ShellExecutor,
     private val extensionInstaller: ExtensionInstaller,
+    private val backgroundShellManager: BackgroundShellManager,
 ) : ViewModel() {
 
     /** 工具链工作区的执行通道与扩展数量（用于详情页展示）。 */
@@ -240,9 +242,12 @@ class WorkspaceDetailVM(
         }
     }
 
-    fun exportFile(entry: WorkspaceFileEntry, outputStream: OutputStream) {
+    fun exportFile(entry: WorkspaceFileEntry, uri: Uri, resolver: ContentResolver) {
         viewModelScope.launch {
             runCatching {
+                // 部分 ROM 的 SAF 返回的 Uri 并没有真正创建文件, 打开时会抛 FileNotFoundException
+                val outputStream = withContext(Dispatchers.IO) { resolver.openOutputStream(uri) }
+                    ?: error("无法打开目标文件")
                 repository.exportFile(
                     id = id,
                     area = state.value.area,

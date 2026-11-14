@@ -6,24 +6,25 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import me.rerere.rikkahub.data.db.entity.WorkspaceEntity
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
+import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.workspace.RootfsInstallProgress
-import me.rerere.workspace.WorkspaceType
 
 class WorkspaceVM(
     private val repository: WorkspaceRepository,
     private val terminalSessionManager: WorkspaceTerminalSessionManager,
+    private val backgroundShellManager: BackgroundShellManager,
 ) : ViewModel() {
     val workspaces = repository.listFlow()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    fun create(name: String, type: WorkspaceType = WorkspaceType.LOCAL) {
+    fun create(name: String) {
         viewModelScope.launch {
-            runCatching { repository.create(name, type) }
+            runCatching { repository.create(name) }
         }
     }
 
@@ -36,6 +37,7 @@ class WorkspaceVM(
     fun delete(workspace: WorkspaceEntity) {
         viewModelScope.launch {
             terminalSessionManager.closeWorkspace(workspace.root)
+            backgroundShellManager.killWorkspace(workspace.id)
             repository.delete(workspace.id)
         }
     }

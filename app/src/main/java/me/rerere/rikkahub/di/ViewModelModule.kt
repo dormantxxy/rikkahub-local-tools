@@ -8,7 +8,6 @@ import me.rerere.rikkahub.ui.pages.chat.ChatVM
 import me.rerere.rikkahub.ui.pages.debug.DebugVM
 import me.rerere.rikkahub.ui.pages.extensions.PromptVM
 import me.rerere.rikkahub.ui.pages.extensions.QuickMessagesVM
-import me.rerere.rikkahub.ui.pages.extensions.toolchains.ToolchainsVM
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillDetailVM
 import me.rerere.rikkahub.ui.pages.extensions.skills.SkillsVM
 import me.rerere.rikkahub.ui.pages.extensions.workspace.WorkspaceDetailVM
@@ -37,8 +36,10 @@ val viewModelModule = module {
             settingsStore = get(),
             chatService = get(),
             updateChecker = get(),
+            analytics = get(),
             filesManager = get(),
             favoriteRepository = get(),
+            backgroundShellManager = get(),
         )
     }
     viewModelOf(::ChatDrawerVM)
@@ -87,15 +88,6 @@ val viewModelModule = module {
     }
     viewModelOf(::PromptVM)
     viewModelOf(::QuickMessagesVM)
-    viewModel<ToolchainsVM> {
-        ToolchainsVM(
-            installer = get(),
-            shellExecutor = get(),
-            context = get(),
-            appEventBus = get(),
-            queue = get(),
-        )
-    }
     viewModelOf(::SkillsVM)
     viewModelOf(::SkillDetailVM)
     viewModelOf(::WorkspaceVM)
@@ -104,8 +96,7 @@ val viewModelModule = module {
             id = it.get(),
             repository = get(),
             terminalSessionManager = get(),
-            shellExecutor = get(),
-            extensionInstaller = get(),
+            backgroundShellManager = get(),
         )
     }
     viewModel<WorkspaceSshEditorVM> {
