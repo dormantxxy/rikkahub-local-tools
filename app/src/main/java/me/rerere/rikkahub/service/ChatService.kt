@@ -65,6 +65,7 @@ import me.rerere.rikkahub.data.model.getChatModelOf
 import me.rerere.rikkahub.data.model.getStoredAssistantOf
 import me.rerere.rikkahub.data.model.insertContextCheckpoint
 import me.rerere.rikkahub.data.model.isAwaitingToolApproval
+import me.rerere.rikkahub.data.model.lastContextTokens
 import me.rerere.rikkahub.data.model.localFileUrls
 import me.rerere.rikkahub.data.model.replaceUserRegexes
 import me.rerere.rikkahub.data.model.selectBranch
@@ -152,6 +153,9 @@ class ChatService(
         onSessionRemoved = memoryConsolidationScheduler::onConversationLeft,
     )
 
+    // 自动压缩已经为哪条回复尝试过；压缩失败也不会对同一条回复反复重试
+    private val autoCompressedReplyIds = java.util.concurrent.ConcurrentHashMap<Uuid, Uuid>()
+
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
     val errors: StateFlow<List<ChatError>> = _errors.asStateFlow()
@@ -188,6 +192,8 @@ class ChatService(
         if (session.state.value.isAwaitingToolApproval) {
             session.messageQueue.failReplyWaiters(context.getString(R.string.chat_page_voice_tool_approval))
         }
+        // 回复正常结束后，上下文占用达到阈值时自动压缩历史（失败不影响队列）
+        if (cause == null) appScope.launch { autoCompressIfNeeded(session) }
         appScope.launch { dispatchNextQueuedMessage(session.id) }
     }
 
@@ -811,6 +817,34 @@ class ChatService(
      * [keepRecentMessages] 为 0 时压缩全部消息，请求和上一轮对话前缀一致，缓存命中最好；
      * 大于 0 时最近的这些消息不参与压缩、留在检查点之后，对话已经超出模型上下文、整段发不出去时用来缩小压缩请求。
      */
+    /**
+     * 一轮回复结束后，按最后一次请求的上下文占用判断是否自动压缩。
+     * 与手动压缩共用 compressConversation，遵循同一套检查点/审批/缓存规则。
+     */
+    private suspend fun autoCompressIfNeeded(session: ConversationSession) {
+        val settings = settingsStore.awaitLoaded()
+        if (!settings.enableAutoCompress || !session.isInitialized) return
+        // 队列被暂停（上一轮失败或等待审批）时不压缩，等用户恢复后再看
+        if (session.messageQueue.state.value.paused || session.state.value.isAwaitingToolApproval) return
+        val conversation = session.state.value
+        val reply = conversation.currentMessages.lastOrNull { it.role == MessageRole.ASSISTANT } ?: return
+        if (autoCompressedReplyIds[session.id] == reply.id) return
+        val model = settings.getChatModelOf(conversation) ?: return
+        val used = conversation.lastContextTokens() ?: return
+        if (model.contextLength <= 0 || used < model.contextLength * settings.autoCompressThreshold) return
+
+        // 先标记，避免压缩期间会话结束回调再次触发；压缩失败也不重试同一条回复
+        autoCompressedReplyIds[session.id] = reply.id
+        compressConversation(
+            conversationId = session.id,
+            additionalPrompt = "",
+            keepRecentMessages = 0,
+        ).onFailure { e ->
+            Log.w(TAG, "Auto compress failed", e)
+            addError(e, session.id, title = context.getString(R.string.error_title_auto_compress))
+        }
+    }
+
     suspend fun compressConversation(
         conversationId: Uuid,
         additionalPrompt: String,

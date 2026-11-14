@@ -90,6 +90,27 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                         supportingContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_desc)) },
                         headlineContent = { Text(stringResource(R.string.setting_display_page_send_on_enter_title)) },
                     )
+                    switchItem(
+                        checked = settings.enableAutoCompress,
+                        onCheckedChange = { vm.updateSettings { latest -> latest.copy(enableAutoCompress = it) } },
+                        supportingContent = { Text(stringResource(R.string.setting_display_page_auto_compress_desc)) },
+                        headlineContent = { Text(stringResource(R.string.setting_display_page_auto_compress_title)) },
+                    )
+                    if (settings.enableAutoCompress) {
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_auto_compress_threshold_title)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_auto_compress_threshold_desc)) },
+                            trailingContent = { CardGroupValue("${(settings.autoCompressThreshold * 100).roundToInt()}%") },
+                        ) {
+                            Slider(
+                                value = settings.autoCompressThreshold,
+                                onValueChange = { vm.updateSettings { latest -> latest.copy(autoCompressThreshold = it) } },
+                                valueRange = 0.5f..0.95f,
+                                steps = 8,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
                 }
             }
 

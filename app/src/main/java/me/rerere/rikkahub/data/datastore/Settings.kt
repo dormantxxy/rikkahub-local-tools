@@ -83,6 +83,11 @@ data class Settings(
     val webServerLocalhostOnly: Boolean = false,
     val backupReminderConfig: BackupReminderConfig = BackupReminderConfig(),
     val sponsorAlertDismissedAt: Int = 0,
+
+    /** 回复结束后上下文占用达到阈值时自动压缩历史 */
+    val enableAutoCompress: Boolean = false,
+    /** 触发自动压缩的上下文占用比例（相对模型 contextLength） */
+    val autoCompressThreshold: Float = 0.8f,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

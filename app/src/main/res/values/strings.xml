@@ -1778,4 +1778,9 @@
   <string name="setting_model_page_memory_model">Memory Consolidation Model</string>
   <string name="setting_model_page_memory_model_desc">Model used to organize conversations into long-term memory in the background; uses the fast model when not set</string>
   <string name="setting_model_page_memory_model_follow_fast">Same as fast model</string>
+  <string name="setting_display_page_auto_compress_title">Auto-compress history</string>
+  <string name="setting_display_page_auto_compress_desc">Automatically compress conversation history after a reply when context usage reaches the threshold</string>
+  <string name="setting_display_page_auto_compress_threshold_title">Compression threshold</string>
+  <string name="setting_display_page_auto_compress_threshold_desc">Compress when the last request uses this share of the model context window</string>
+  <string name="error_title_auto_compress">Auto-compress failed</string>
 </resources>
