@@ -105,8 +105,8 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                             Slider(
                                 value = settings.autoCompressThreshold,
                                 onValueChange = { vm.updateSettings { latest -> latest.copy(autoCompressThreshold = it) } },
-                                valueRange = 0.5f..0.95f,
-                                steps = 8,
+                                valueRange = 0.1f..0.95f,
+                                steps = 16,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
