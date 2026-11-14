@@ -48,8 +48,10 @@ data class WorkspaceEntity(
 ) {
     fun isSsh(): Boolean = type == WorkspaceType.SSH.name
 
-    fun capabilities(): WorkspaceCapabilities =
-        runCatching { WorkspaceType.valueOf(type) }.getOrDefault(WorkspaceType.LOCAL).capabilities
+    fun workspaceType(): WorkspaceType =
+        runCatching { WorkspaceType.valueOf(type) }.getOrDefault(WorkspaceType.LOCAL)
+
+    fun capabilities(): WorkspaceCapabilities = workspaceType().capabilities
 
     fun sshSettings(): SshWorkspaceSettings? = sshConfig?.let { config ->
         runCatching { JsonInstant.decodeFromString<SshWorkspaceSettings>(config) }.getOrNull()

@@ -36,7 +36,6 @@ val viewModelModule = module {
             settingsStore = get(),
             chatService = get(),
             updateChecker = get(),
-            analytics = get(),
             filesManager = get(),
             favoriteRepository = get(),
             backgroundShellManager = get(),
@@ -96,6 +95,8 @@ val viewModelModule = module {
             id = it.get(),
             repository = get(),
             terminalSessionManager = get(),
+            shellExecutor = get(),
+            extensionInstaller = get(),
             backgroundShellManager = get(),
         )
     }
