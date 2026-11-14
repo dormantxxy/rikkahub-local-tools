@@ -192,9 +192,12 @@ class ChatService(
         if (session.state.value.isAwaitingToolApproval) {
             session.messageQueue.failReplyWaiters(context.getString(R.string.chat_page_voice_tool_approval))
         }
-        // 回复正常结束后，上下文占用达到阈值时自动压缩历史（失败不影响队列）
-        if (cause == null) appScope.launch { autoCompressIfNeeded(session) }
-        appScope.launch { dispatchNextQueuedMessage(session.id) }
+        // 回复正常结束后先自动压缩历史，压缩完成后再派发下一条排队消息。
+        // 必须串行：并发时 compressConversation 的 !isGenerating 检查会失败。
+        appScope.launch {
+            if (cause == null) autoCompressIfNeeded(session)
+            dispatchNextQueuedMessage(session.id)
+        }
     }
 
     // 保留 UI/Web 的入口，生命周期和状态查询统一交给 SessionManager。
@@ -820,6 +823,7 @@ class ChatService(
     /**
      * 一轮回复结束后，按最后一次请求的上下文占用判断是否自动压缩。
      * 与手动压缩共用 compressConversation，遵循同一套检查点/审批/缓存规则。
+     * 调用方须在派发下一条排队消息之前调用，避免和下一条生成并发。
      */
     private suspend fun autoCompressIfNeeded(session: ConversationSession) {
         val settings = settingsStore.awaitLoaded()
@@ -835,13 +839,18 @@ class ChatService(
 
         // 先标记，避免压缩期间会话结束回调再次触发；压缩失败也不重试同一条回复
         autoCompressedReplyIds[session.id] = reply.id
-        compressConversation(
-            conversationId = session.id,
-            additionalPrompt = "",
-            keepRecentMessages = 0,
-        ).onFailure { e ->
-            Log.w(TAG, "Auto compress failed", e)
-            addError(e, session.id, title = context.getString(R.string.error_title_auto_compress))
+        session.processingStatus.value = context.getString(R.string.chat_page_compressing)
+        try {
+            compressConversation(
+                conversationId = session.id,
+                additionalPrompt = "",
+                keepRecentMessages = 0,
+            ).onFailure { e ->
+                Log.w(TAG, "Auto compress failed", e)
+                addError(e, session.id, title = context.getString(R.string.error_title_auto_compress))
+            }
+        } finally {
+            session.processingStatus.value = null
         }
     }
 
