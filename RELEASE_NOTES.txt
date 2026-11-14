@@ -1,6 +1,6 @@
-RikkaHub 3.1.1 本地工具版
+RikkaHub 3.2.0 本地工具版
 
-基于官方 3.1.1 定制。相对官方版的差异与使用方式如下。
+基于官方 3.2.0 定制。相对官方版的差异与使用方式如下。
 
 ════════ 使用方式 ════════
 
@@ -15,6 +15,7 @@ RikkaHub 3.1.1 本地工具版
   · 工具链增强      查看环境信息 / 搜索并安装扩展包
   · 界面自动化      点击 / 滑动 / 输入文本 / 查看控件树
   · 截屏 / 日志读取 / 应用管理
+  · 手机使用        让 AI 操作手机（需开启无障碍服务与悬浮窗）
 同页最下方是「设备命令审批」开关，默认关闭（关闭时不拦截任何命令）。
 
 【二、安装扩展（要用 git/python/node 时）】
@@ -23,57 +24,17 @@ RikkaHub 3.1.1 本地工具版
 
 【三、创建工作区（可选）】
 左侧抽屉 →「工作区」→ 新建：
-  · 工具链工作区  无需装 rootfs，直接用已装扩展的环境跑命令（需 root/Shizuku）
+  · 工具链工作区  无需 rootfs，直接用已装扩展的环境跑命令（需 root/Shizuku）
   · Rootfs 工作区 需先安装 rootfs
   · SSH 工作区    远程执行
 对话底部输入框旁选择工作区后，AI 的命令走该工作区的 workspace_shell。
 列表中每个工作区显示状态：禁用 = 当前不可用；就绪 = 可用。
 
-【四、文件位置】
-  · 未绑定工作区：/storage/emulated/0/RikkaHub/tmp（需「所有文件访问」权限）
-  · 工具链工作区：/storage/emulated/0/RikkaHub/workspaces/<id>/files
-  · 授权入口：设置 → 所有文件访问
-
-【五、用官方版恢复本版备份（重要）】
-本版备份含官方版没有的本地工具选项，直接恢复会报 JSON 解析错误。
-需先从备份 zip 里的 settings.json 删除 localTools 中的以下项，再重新打包：
-  shell / cli / files / search_code / file_tree / toolchain /
-  ui_automation / screenshot / logcat / app_manager / web_fetch
-官方认得的保留：time_info / javascript_engine / clipboard / tts /
-ask_user / screen_time / calendar / chart_display
-数据库版本两边一致（均为 32），无需改动。
-
-════════ 相对官方版的差异 ════════
-
-【新增：本地工具】
-- 设备命令 run_shell：root/Shizuku 执行；命令首词命中已装扩展时自动切工具链环境
-- 原生工具链 run_cli：聚合所有已装扩展的 PATH / LD_LIBRARY_PATH
-- 文件与检索：manage_files、search_code、list_file_tree（纯 Kotlin 实现，不依赖系统 grep）
-- 设备操作：tap、swipe、input_text、ui_dump、screenshot、logcat、应用管理（列出/启动/停止/提取 APK）
-- 工具链增强：env_info、pkg_search、pkg_install
-- 无 root / Shizuku 时不暴露依赖权限的工具
-
-【新增：工作区】
-- 工具链工作区：无需 rootfs，直接用已装扩展的环境执行命令
-- Rootfs / SSH 工作区：命令走 workspace_shell
-- 工具隔离：绑定 Rootfs / SSH 工作区时，设备级工具不再暴露给 AI
-- 状态显示：工具链工作区无权限显示「禁用」，有权限显示「就绪」
-
-【新增：扩展商店】
-- 在线索引，搜索覆盖 3000+ Termux 软件包
-- Termux .deb 安装（ar + data.tar.xz 解压，依赖自动安装）
-- 国内镜像加速（GitHub 代理 + 清华/中科大/北外镜像）
-- 安装即时进度、可取消、卸载保守模式（不级联删依赖）
-
-【性能】
-- 头像动画按需运行（非加载态不创建旋转动画）
-- 渐变背景动画接入生命周期（切后台自动暂停）
-
-【修复】
-- 修复 APK 版本名显示为 null
-- 修复设备 Shell 审批：关闭时不再拦截任何命令
-- 修复 rm -rf /data/... 等安全路径被误判为危险命令
-- 修复工作区状态在列表与选择弹窗中的显示
-
-【移除】
-- 赞助入口与捐赠页
+════════ 本版同步的官方更新 ════════
+· 对话过长时自动压缩历史（回复结束后 / 回复中途）
+· 后台 shell：workspace_shell 支持 run_in_background
+· 手机使用（Phone Use）
+· Claude redacted_thinking 回传修复、Mistral 推理模型多轮 422 修复
+· 对话地图滑动卡顿与搜索框固定修复
+· 可用模型列表手动刷新、多关键词搜索
+· SAF 导出闪退修复、余额查询支持 POST、信任用户安装的 CA 证书
