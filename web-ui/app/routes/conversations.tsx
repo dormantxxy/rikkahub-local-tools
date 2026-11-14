@@ -46,7 +46,6 @@ import {
   type ProviderModel,
   type Settings,
   type UIMessagePart,
-  isNoticeOnly,
 } from "~/types";
 import { MessageSquare } from "lucide-react";
 import Logo from "~/components/logo";
@@ -114,8 +113,6 @@ function getQuickJumpPreview(
   if (!fallbackPart) return t("conversations.preview.empty_message");
 
   switch (fallbackPart.type) {
-    case "notice":
-      return truncatePreviewText(fallbackPart.title.trim());
     case "image":
       return t("conversations.preview.image");
     case "video":
@@ -672,13 +669,11 @@ const ConversationTimeline = React.memo(
 
         {canQuickJump ? (
           <ConversationQuickJump
-            items={selectedNodeMessages
-              .filter(({ message }) => !isNoticeOnly(message))
-              .map(({ message }) => ({
-                id: message.id,
-                role: message.role,
-                preview: getQuickJumpPreview(message, t),
-              }))}
+            items={selectedNodeMessages.map(({ message }) => ({
+              id: message.id,
+              role: message.role,
+              preview: getQuickJumpPreview(message, t),
+            }))}
           />
         ) : null}
 

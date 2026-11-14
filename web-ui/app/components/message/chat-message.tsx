@@ -17,7 +17,6 @@ import {
   Package,
   Pencil,
   RefreshCw,
-  Repeat,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -75,8 +74,6 @@ function hasRenderablePart(part: UIMessagePart): boolean {
       return part.reasoning.trim().length > 0;
     case "tool":
       return true;
-    case "notice":
-      return false;
   }
 }
 
@@ -96,8 +93,6 @@ function formatPartForCopy(part: UIMessagePart, t: TFunction): string | null {
       return part.reasoning;
     case "tool":
       return `[${t("chat_message.copy_tool")}] ${part.toolName}`;
-    case "notice":
-      return null;
   }
 }
 
@@ -134,39 +129,27 @@ function getDurationMs(createdAt: string, finishedAt?: string | null): number | 
   return end - start;
 }
 
-// 多轮工具调用时 usage 是各步累计值：输入只显示最后一次请求的（即上下文占用），
-// 累计输入放在悬停提示里；输出和速度仍按累计值算
-function getNerdStats(message: MessageDto, usage: TokenUsage, t: TFunction) {
-  const { createdAt, finishedAt, generationTimeMs } = message;
-  // 没有 lastUsage 的旧消息退回用累计值
-  const lastUsage = message.lastUsage ?? usage;
-  const steps = message.stepCount ?? 1;
-  const stats: Array<{ key: string; icon: React.ReactNode; label: string; title?: string }> = [];
-
-  if (steps > 1) {
-    stats.push({
-      key: "steps",
-      icon: <Repeat className="size-3" />,
-      label: t("chat_message.step_count", { count: steps }),
-    });
-  }
+function getNerdStats(
+  usage: TokenUsage,
+  createdAt: string,
+  finishedAt: string | null | undefined,
+  generationTimeMs: number | null | undefined,
+  t: TFunction,
+) {
+  const stats: Array<{ key: string; icon: React.ReactNode; label: string }> = [];
 
   stats.push({
     key: "prompt",
     icon: <ArrowUp className="size-3" />,
     label:
-      lastUsage.cachedTokens > 0
+      usage.cachedTokens > 0
         ? t("chat_message.prompt_tokens_with_cache", {
-            promptTokens: formatNumber(lastUsage.promptTokens),
-            cachedTokens: formatNumber(lastUsage.cachedTokens),
+            promptTokens: formatNumber(usage.promptTokens),
+            cachedTokens: formatNumber(usage.cachedTokens),
           })
         : t("chat_message.prompt_tokens", {
-            promptTokens: formatNumber(lastUsage.promptTokens),
+            promptTokens: formatNumber(usage.promptTokens),
           }),
-    title:
-      steps > 1
-        ? t("chat_message.total_prompt_tokens", { value: formatNumber(usage.promptTokens) })
-        : undefined,
   });
 
   stats.push({
@@ -513,7 +496,13 @@ const ChatMessageNerdLineRow = React.memo(({
     return null;
   }
 
-  const stats = getNerdStats(message, message.usage, t);
+  const stats = getNerdStats(
+    message.usage,
+    message.createdAt,
+    message.finishedAt,
+    message.generationTimeMs,
+    t,
+  );
   if (stats.length === 0) return null;
 
   return (
@@ -524,7 +513,7 @@ const ChatMessageNerdLineRow = React.memo(({
       )}
     >
       {stats.map((item) => (
-        <div key={item.key} className="inline-flex items-center gap-1" title={item.title}>
+        <div key={item.key} className="inline-flex items-center gap-1">
           {item.icon}
           <span>{item.label}</span>
         </div>
@@ -649,11 +638,6 @@ export const ChatMessage = React.memo(({
 
   if (message.isContextCheckpoint) {
     return <ChatMessageContextCheckpoint message={message} onEdit={onEdit} onDelete={onDelete} />;
-  }
-
-  // 运行时通知单独开一轮时存成 user 消息，网页端不展示通知，这里不留空气泡
-  if (isUser && message.parts.length > 0 && !hasMessageContent) {
-    return null;
   }
 
   return (

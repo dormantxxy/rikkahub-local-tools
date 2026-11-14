@@ -4,12 +4,9 @@ import android.content.Context
 import me.rerere.ai.core.Tool
 import me.rerere.rikkahub.data.datastore.SettingsStore
 import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.localtools.ExtensionInstaller
 import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
-import me.rerere.rikkahub.phoneuse.PhoneUseManager
-import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
 import me.rerere.tts.provider.TTSManager
 
 /** 未绑定工作区时临时工作区的目录名（workspaces/<root>/files）。 */
@@ -33,8 +30,6 @@ class LocalTools(
     private val shellExecutor: ShellExecutor,
     private val toolchainExecutor: ToolchainExecutor,
     private val extensionInstaller: ExtensionInstaller,
-    private val phoneUseManager: PhoneUseManager,
-    private val filesManager: FilesManager,
 ) {
     /**
      * 未绑定工作区时 AI 的默认工作目录：
@@ -91,21 +86,6 @@ class LocalTools(
     val calendarQueryTool by lazy { buildCalendarQueryTool(context) }
     val calendarCreateTool by lazy { buildCalendarCreateTool(context) }
     val chartDisplayTool by lazy { buildChartDisplayTool() }
-
-    val phoneUseTool by lazy {
-        buildPhoneUseTool(
-            ownPackageName = context.packageName,
-            manager = phoneUseManager,
-            isFloatingWindowOn = { isFloatingChatWindowOn(context, settingsStore.settingsFlow.value) },
-            saveScreenshot = { bytes ->
-                filesManager.createChatFilesByByteArrays(
-                    byteArrays = listOf(bytes),
-                    displayName = "screenshot.jpg",
-                    mimeType = "image/jpeg",
-                ).first().toString()
-            },
-        )
-    }
 
     // ===== 增强工具 =====
     val pkgSearchTool by lazy { buildPkgSearchTool(context) }
@@ -169,10 +149,6 @@ class LocalTools(
             tools.add(calendarCreateTool)
         }
         if (options.contains(LocalToolOption.ChartDisplay)) tools.add(chartDisplayTool)
-        // 不支持的渠道和系统版本上，之前在别处开过（比如导入的备份）也不提供
-        if (options.contains(LocalToolOption.PhoneUse) && PhoneUseManager.isSupported) {
-            tools.add(phoneUseTool)
-        }
         // run_shell（设备命令）依赖 root/Shizuku：无权限时不暴露
         if (options.contains(LocalToolOption.Shell) && privileged) {
             val shellTool = buildRunShellTool(shellExecutor, dir, toolchainExecutor, extensionInstaller)

@@ -34,9 +34,9 @@ class HistoryVM(
         Log.e(TAG, "Error: ${it.message}")
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    fun deleteConversations(conversationIds: Collection<Uuid>) {
+    fun deleteConversation(conversation: Conversation) {
         viewModelScope.launch {
-            conversationIds.forEach { chatService.deleteConversation(it) }
+            chatService.deleteConversation(conversation.id)
         }
     }
 
@@ -55,4 +55,14 @@ class HistoryVM(
 
     fun getPinnedConversations(): Flow<List<Conversation>> =
         conversationRepo.getPinnedConversations()
+
+    fun restoreConversation(conversation: Conversation) {
+        viewModelScope.launch {
+            chatService.restoreConversation(conversation)
+        }
+    }
+
+    suspend fun getFullConversation(conversationId: Uuid): Conversation? {
+        return chatService.getConversation(conversationId)
+    }
 }

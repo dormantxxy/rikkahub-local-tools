@@ -14,9 +14,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,7 +29,6 @@ import androidx.compose.ui.unit.dp
 import me.rerere.ai.provider.CustomHeader
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.QuotaQuery
-import me.rerere.ai.provider.QuotaQueryMethod
 import me.rerere.ai.provider.renderQuotaTemplate
 import me.rerere.common.http.isJsonExprValid
 import me.rerere.rikkahub.R
@@ -79,17 +75,6 @@ fun SettingProviderQuotaQuery(
                 Column(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        QuotaQueryMethod.entries.forEachIndexed { index, method ->
-                            SegmentedButton(
-                                selected = query.method == method,
-                                onClick = { onEdit(query.copy(method = method)) },
-                                shape = SegmentedButtonDefaults.itemShape(index, QuotaQueryMethod.entries.size),
-                            ) {
-                                Text(method.name)
-                            }
-                        }
-                    }
                     OutlinedTextField(
                         value = query.url,
                         onValueChange = { onEdit(query.copy(url = it)) },
@@ -134,16 +119,6 @@ fun SettingProviderQuotaQuery(
                                 )
                             }
                         }
-                    }
-                    if (query.method == QuotaQueryMethod.POST) {
-                        OutlinedTextField(
-                            value = query.body,
-                            onValueChange = { onEdit(query.copy(body = it)) },
-                            label = { Text("Body (JSON)") },
-                            minLines = 3,
-                            modifier = Modifier.fillMaxWidth(),
-                            textStyle = codeStyle,
-                        )
                     }
                     OutlinedTextField(
                         value = query.resultPath,

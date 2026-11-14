@@ -125,8 +125,8 @@ jobs:
         if: success()
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.2.0-build${{ github.run_number }}
-          name: RikkaHub 3.2.0 build${{ github.run_number }}
+          tag_name: v3.1.1-build${{ github.run_number }}
+          name: RikkaHub 3.1.1 build${{ github.run_number }}
           body_path: RELEASE_NOTES.txt
           prerelease: false
           make_latest: true

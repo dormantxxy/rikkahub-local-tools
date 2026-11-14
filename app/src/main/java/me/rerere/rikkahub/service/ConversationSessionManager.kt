@@ -103,17 +103,12 @@ class ConversationSessionManager(
     fun getGenerationStartedAtFlow(conversationId: Uuid): StateFlow<Long?> =
         getOrCreate(conversationId).generationStartedAt
 
-    fun getInboxFlow(conversationId: Uuid): StateFlow<InboxState> =
-        getOrCreate(conversationId).inbox.state
+    fun getMessageQueueFlow(conversationId: Uuid): StateFlow<MessageQueueState> =
+        getOrCreate(conversationId).messageQueue.state
 
     fun getGenerationJobStateFlow(conversationId: Uuid): Flow<Job?> =
         sessions.map { it[conversationId] }.distinctUntilChanged().flatMapLatest { session ->
             session?.generationJob ?: flowOf(null)
-        }
-
-    fun getActivityFlow(conversationId: Uuid): Flow<SessionActivity?> =
-        sessions.map { it[conversationId] }.distinctUntilChanged().flatMapLatest { session ->
-            session?.activity ?: flowOf(null)
         }
 
     fun getConversationJobs(): Flow<Map<Uuid, Job?>> = sessions.flatMapLatest { current ->

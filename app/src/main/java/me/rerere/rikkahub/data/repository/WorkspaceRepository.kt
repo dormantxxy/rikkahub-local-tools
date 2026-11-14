@@ -22,7 +22,6 @@ import me.rerere.workspace.WorkspaceBackend
 import me.rerere.workspace.WorkspaceCommandResult
 import me.rerere.workspace.WorkspaceFileEntry
 import me.rerere.workspace.WorkspaceLayout
-import me.rerere.workspace.WorkspaceBackgroundCommand
 import me.rerere.workspace.WorkspaceManager
 import me.rerere.workspace.WorkspaceShellStatus
 import me.rerere.workspace.WorkspaceStorageArea
@@ -385,17 +384,6 @@ class WorkspaceRepository(
         return runInterruptible(Dispatchers.IO) {
             backendOf(workspace).executeCommand(command, cwd, timeoutMillis, stdin)
         }
-    }
-
-    /** 在后台启动命令并立即返回, 进程的生命周期由调用方管理 */
-    suspend fun startBackgroundCommand(
-        id: String,
-        command: String,
-        cwd: String,
-        taskId: String,
-    ): WorkspaceBackgroundCommand = withContext(Dispatchers.IO) {
-        val workspace = dao.getById(id) ?: error("Workspace not found: $id")
-        backendOf(workspace).startBackgroundCommand(command, cwd, taskId)
     }
 
     suspend fun delete(id: String): Boolean {

@@ -2,7 +2,6 @@ package me.rerere.rikkahub.ui.components.ai
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -16,7 +15,7 @@ import dev.chrisbanes.haze.glass.GlassStyle
 import dev.chrisbanes.haze.glass.GlassStyleScope
 import dev.chrisbanes.haze.glass.OpticalSizeValue
 import dev.chrisbanes.haze.glass.hazeGlass
-import dev.chrisbanes.haze.glass.material3.material3
+import dev.chrisbanes.haze.glass.material3.Material3
 import me.rerere.rikkahub.data.datastore.BackgroundEffectType
 import me.rerere.rikkahub.data.datastore.DisplaySetting
 import me.rerere.rikkahub.ui.theme.LocalDarkMode
@@ -44,27 +43,22 @@ internal fun Modifier.chatInputHaze(
 
         BackgroundEffectType.GLASS -> {
             val darkMode = LocalDarkMode.current
-            val baseStyle = GlassStyle.material3(
-                containerColor = containerColor,
-                tint = containerColor.copy(alpha = 0.3f),
-            )
-            // 2.1.0 起样式按实例比较，记住它，避免每次重组都换一个新样式
-            val style = remember(baseStyle, darkMode, shape) {
-                baseStyle.then {
+            hazeGlass(
+                input = HazeInput.Sources(hazeState),
+                style = GlassStyle.Material3(
+                    containerColor = containerColor,
+                    tint = containerColor.copy(alpha = 0.3f),
+                ) {
                     appearanceResponse(dark = darkMode)
                     // Keep background text from competing with the input text.
-                    optics {
-                        copy(
+                    optics(
+                        GlassDefaults.optics.copy(
                             blurRadius = OpticalSizeValue.Fixed(16.dp),
                             depth = OpticalSizeValue.Fixed(0.5f),
                         )
-                    }
+                    )
                     shape(shape)
-                }
-            }
-            hazeGlass(
-                input = HazeInput.Sources(hazeState),
-                style = style,
+                },
             )
         }
     }

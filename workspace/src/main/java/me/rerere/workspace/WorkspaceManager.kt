@@ -306,38 +306,6 @@ class WorkspaceManager(
         )
     }
 
-    /** 在后台启动命令并立即返回；[id] 用来命名日志文件，[type] 决定用哪个执行器 */
-    fun startBackgroundCommand(
-        root: String,
-        command: String,
-        cwd: String,
-        id: String,
-        shellCompatibilityMode: Boolean = false,
-        type: WorkspaceType = WorkspaceType.LOCAL,
-    ): WorkspaceBackgroundCommand {
-        require(command.isNotBlank()) { "Command is required" }
-        val workingDir = fileSystem.resolve(filesDir(root, type), cwd)
-        require(workingDir.exists()) { "Working directory does not exist: $cwd" }
-        require(workingDir.isDirectory) { "Working path is not a directory: $cwd" }
-
-        return runnerFor(type).startBackground(
-            WorkspaceShellContext(
-                root = root,
-                command = command,
-                cwd = cwd,
-                filesDir = filesDir(root, type),
-                linuxDir = linuxDir(root, type),
-                tempDir = tempDir(root, type),
-                workingDir = workingDir,
-                timeoutMillis = 0,
-                stdin = null,
-                bindMounts = bindMounts,
-                shellCompatibilityMode = shellCompatibilityMode,
-            ),
-            id,
-        )
-    }
-
     /** 交互式终端启动前的准备: 补齐目录, 并按当前网络刷新 Rootfs 的 DNS 等配置 */
     fun prepareTerminal(root: String, nameservers: List<String>, type: WorkspaceType = WorkspaceType.LOCAL) {
         ensureWorkspace(root, type)

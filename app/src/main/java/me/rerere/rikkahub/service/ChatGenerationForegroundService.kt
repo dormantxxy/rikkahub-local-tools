@@ -33,21 +33,14 @@ class ChatGenerationForegroundService : Service() {
         private const val ACTION_RELEASE = "me.rerere.rikkahub.action.CHAT_GENERATION_RELEASE"
         private const val EXTRA_GENERATION_ID = "generation_id"
         private const val EXTRA_CONVERSATION_ID = "conversation_id"
-        private const val EXTRA_ACTIVITY = "activity"
 
         const val NOTIFICATION_ID = 2002
 
-        fun acquire(
-            context: Context,
-            generationId: Uuid,
-            conversationId: Uuid,
-            activity: SessionActivity = SessionActivity.Generating,
-        ): Boolean {
+        fun acquire(context: Context, generationId: Uuid, conversationId: Uuid): Boolean {
             val intent = Intent(context, ChatGenerationForegroundService::class.java).apply {
                 action = ACTION_ACQUIRE
                 putExtra(EXTRA_GENERATION_ID, generationId.toString())
                 putExtra(EXTRA_CONVERSATION_ID, conversationId.toString())
-                putExtra(EXTRA_ACTIVITY, activity.name)
             }
             return runCatching {
                 ContextCompat.startForegroundService(context, intent)
@@ -70,9 +63,7 @@ class ChatGenerationForegroundService : Service() {
         }
     }
 
-    private data class ActiveGeneration(val conversationId: String, val activity: SessionActivity)
-
-    private val activeGenerations = linkedMapOf<String, ActiveGeneration>()
+    private val activeGenerations = linkedMapOf<String, String>()
     private var isForeground = false
     private val appScope: AppScope by inject()
     private val chatService: ChatService by inject()
@@ -100,7 +91,7 @@ class ChatGenerationForegroundService : Service() {
     override fun onTimeout(startId: Int, fgsType: Int) {
         Log.e(TAG, "Foreground service timed out (type=$fgsType)")
         activeGenerations.values
-            .mapNotNull { runCatching { Uuid.parse(it.conversationId) }.getOrNull() }
+            .mapNotNull { runCatching { Uuid.parse(it) }.getOrNull() }
             .distinct()
             .forEach { conversationId ->
                 appScope.launch {
@@ -114,11 +105,8 @@ class ChatGenerationForegroundService : Service() {
     private fun acquire(intent: Intent, startId: Int) {
         val generationId = intent.getStringExtra(EXTRA_GENERATION_ID) ?: return stopSelf(startId)
         val conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID) ?: return stopSelf(startId)
-        val activity = SessionActivity.entries.find { it.name == intent.getStringExtra(EXTRA_ACTIVITY) }
-            ?: SessionActivity.Generating
-        val generation = ActiveGeneration(conversationId, activity)
-        activeGenerations[generationId] = generation
-        updateForegroundNotification(generation)
+        activeGenerations[generationId] = conversationId
+        updateForegroundNotification(conversationId)
     }
 
     private fun release(intent: Intent, startId: Int) {
@@ -133,9 +121,9 @@ class ChatGenerationForegroundService : Service() {
         }
     }
 
-    private fun updateForegroundNotification(generation: ActiveGeneration) {
+    private fun updateForegroundNotification(conversationId: String) {
         try {
-            val notification = buildNotification(generation)
+            val notification = buildNotification(conversationId)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 ServiceCompat.startForeground(
                     this,
@@ -162,19 +150,12 @@ class ChatGenerationForegroundService : Service() {
         stopSelf()
     }
 
-    private fun buildNotification(generation: ActiveGeneration) =
+    private fun buildNotification(conversationId: String) =
         NotificationCompat.Builder(this, CHAT_LIVE_UPDATE_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_rikkahub)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(
-                getString(
-                    when (generation.activity) {
-                        SessionActivity.Generating -> R.string.notification_live_update_title
-                        SessionActivity.Compressing -> R.string.chat_page_compressing
-                    }
-                )
-            )
-            .setContentIntent(getConversationPendingIntent(generation.conversationId))
+            .setContentText(getString(R.string.notification_live_update_title))
+            .setContentIntent(getConversationPendingIntent(conversationId))
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

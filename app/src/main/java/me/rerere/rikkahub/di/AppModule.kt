@@ -10,8 +10,6 @@ import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainInstallQueue
 import me.rerere.rikkahub.data.event.AppEventBus
-import me.rerere.rikkahub.phoneuse.PhoneUseManager
-import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
 import me.rerere.rikkahub.service.ChatService
@@ -42,11 +40,7 @@ val appModule = module {
     single { ToolchainExecutor(get(), get(), get()) }
     single { ToolchainInstallQueue(get(), get(), get()) }
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get())
-    }
-
-    single {
-        PhoneUseManager()
+        LocalTools(get(), get(), get(), get(), get(), get(), get())
     }
 
     single {
@@ -102,7 +96,6 @@ val appModule = module {
             context = get(),
             appScope = get(),
             tracker = get(),
-            phoneUseManager = get(),
             lazyChatService = lazy { get() },
         )
     }
@@ -115,14 +108,6 @@ val appModule = module {
             localTools = get(),
             mcpManager = get(),
             skillManager = get(),
-            workspaceRepository = get(),
-            backgroundShellManager = get(),
-        )
-    }
-
-    single {
-        BackgroundShellManager(
-            context = get(),
             workspaceRepository = get(),
         )
     }
@@ -153,8 +138,7 @@ val appModule = module {
             metaGenerator = get(),
             mcpManager = get(),
             filesManager = get(),
-            folderRepository = get(),
-            backgroundShellManager = get(),
+            folderRepository = get()
         )
     }
 

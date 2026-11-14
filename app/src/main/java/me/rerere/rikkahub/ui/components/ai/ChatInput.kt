@@ -39,8 +39,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
@@ -91,7 +89,6 @@ import me.rerere.hugeicons.HugeIcons
 import me.rerere.hugeicons.stroke.Add01
 import me.rerere.hugeicons.stroke.ArrowUp02
 import me.rerere.hugeicons.stroke.Cancel01
-import me.rerere.hugeicons.stroke.ComputerTerminal01
 import me.rerere.hugeicons.stroke.Fullscreen
 import me.rerere.hugeicons.stroke.Zap
 import me.rerere.rikkahub.R
@@ -100,7 +97,7 @@ import me.rerere.rikkahub.data.datastore.getQuickMessagesOfAssistant
 import me.rerere.rikkahub.data.files.FilesManager
 import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.model.QuickMessage
-import me.rerere.rikkahub.service.InboxState
+import me.rerere.rikkahub.service.MessageQueueState
 import me.rerere.rikkahub.service.QueuedMessage
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionContext
 import me.rerere.rikkahub.ui.components.ai.completion.ChatCompletionItem
@@ -137,16 +134,16 @@ fun ChatInput(
     onCancelClick: () -> Unit,
     onSendClick: () -> Unit,
     onLongSendClick: () -> Unit,
-    messageQueue: InboxState = InboxState(),
+    messageQueue: MessageQueueState = MessageQueueState(),
     onRemoveQueuedMessage: (Uuid) -> Unit = {},
     onBeginEditQueuedMessage: (Uuid) -> QueuedMessage? = { null },
     onFinishEditQueuedMessage: (Uuid, List<UIMessagePart>?) -> Unit = { _, _ -> },
     onResumeMessageQueue: () -> Unit = {},
-    runningBackgroundTasks: Int = 0,
-    onShowBackgroundTasks: () -> Unit = {},
     onStartVoiceMode: (() -> Unit)? = null,
     voiceState: VoiceSessionState = VoiceSessionState(),
     onStopVoiceMode: () -> Unit = {},
+    // 键盘回车回调（始终发送/入队，不区分 loading）
+    onEnterSend: (() -> Unit)? = null,
 ) {
     val toaster = LocalToaster.current
     val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
@@ -170,7 +167,15 @@ fun ChatInput(
     fun sendMessage() {
         focusManager.clearFocus(force = true)
         keyboardController?.hide()
+        // 输入框有文字时：发送/加入队列；只有输入为空且正在生成时才停止
         if (loading && state.isEmpty()) onCancelClick() else onSendClick()
+    }
+
+    // 回车发送：即使正在生成也加入队列，不停止生成
+    fun sendMessageOnEnter() {
+        focusManager.clearFocus(force = true)
+        keyboardController?.hide()
+        onSendClick()
     }
 
     fun sendMessageWithoutAnswer() {
@@ -277,6 +282,7 @@ fun ChatInput(
                         assistant = assistant,
                         completionProviders = completionProviders,
                         onSendMessage = { sendMessage() },
+                        onEnterSend = { sendMessageOnEnter() },
                     )
 
                     Row(
@@ -287,41 +293,29 @@ fun ChatInput(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                // Model Picker
-                                ModelSelectorButton(
-                                    state = modelListState,
+                            // Model Picker
+                            ModelSelectorButton(
+                                state = modelListState,
+                                onlyIcon = true,
+                                modifier = Modifier,
+                            )
+
+                            // Reasoning
+                            if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
+                                ReasoningButton(
+                                    reasoningLevel = assistant.reasoningLevel,
+                                    onUpdateReasoningLevel = {
+                                        onUpdateAssistant(assistant.copy(reasoningLevel = it))
+                                    },
                                     onlyIcon = true,
-                                    modifier = Modifier,
-                                )
-
-                                // Reasoning
-                                if (chatModel?.abilities?.contains(ModelAbility.REASONING) == true) {
-                                    ReasoningButton(
-                                        reasoningLevel = assistant.reasoningLevel,
-                                        onUpdateReasoningLevel = {
-                                            onUpdateAssistant(assistant.copy(reasoningLevel = it))
-                                        },
-                                        onlyIcon = true,
-                                    )
-                                }
-                            }
-
-                            if (runningBackgroundTasks > 0) {
-                                BackgroundTasksButton(
-                                    running = runningBackgroundTasks,
-                                    onClick = onShowBackgroundTasks,
                                 )
                             }
+
                         }
 
                         ActionIconButton(
@@ -395,6 +389,7 @@ private fun SendButton(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 输入框有文字时始终显示发送按钮（可发送/入队）；只有空输入且生成中才显示停止
     val showStop = loading && empty
     val containerColor = when {
         showStop -> MaterialTheme.colorScheme.errorContainer
@@ -434,29 +429,6 @@ private fun SendButton(
 }
 
 @Composable
-private fun BackgroundTasksButton(
-    running: Int,
-    onClick: () -> Unit,
-) {
-    BadgedBox(
-        modifier = Modifier.padding(horizontal = 5.dp),
-        badge = {
-            Badge(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-            ) { Text(running.toString()) }
-        },
-    ) {
-        ActionIconButton(onClick = onClick) {
-            Icon(
-                imageVector = HugeIcons.ComputerTerminal01,
-                contentDescription = stringResource(R.string.background_tasks_running, running),
-            )
-        }
-    }
-}
-
-@Composable
 private fun ActionIconButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
@@ -482,6 +454,7 @@ private fun TextInputRow(
     assistant: Assistant,
     completionProviders: List<ChatCompletionProvider>,
     onSendMessage: () -> Unit,
+    onEnterSend: () -> Unit,
 ) {
     val settings = LocalSettings.current
     val filesManager: FilesManager = koinInject()
@@ -631,7 +604,7 @@ private fun TextInputRow(
             ),
             onKeyboardAction = {
                 if (settings.displaySetting.sendOnEnter && !state.isEmpty()) {
-                    onSendMessage()
+                    onEnterSend()
                 }
             },
             colors = TextFieldDefaults.colors().copy(
@@ -765,7 +738,6 @@ private fun QuickMessageButton(
     state: ChatInputState,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val hapticFeedback = LocalHapticFeedback.current
     IconButton(
         onClick = {
             expanded = !expanded
@@ -778,22 +750,13 @@ private fun QuickMessageButton(
                 .widthIn(min = 200.dp, max = 360.dp)
         ) {
             quickMessages.forEach { quickMessage ->
-                // 短按追加到输入框末尾，长按替换输入框内容
                 Surface(
+                    onClick = {
+                        state.appendText(quickMessage.content)
+                        expanded = false
+                    },
                     color = Color.Transparent,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .combinedClickable(
-                            onClick = {
-                                state.appendText(quickMessage.content)
-                                expanded = false
-                            },
-                            onLongClick = {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                state.setMessageText(quickMessage.content)
-                                expanded = false
-                            },
-                        ),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(
                         modifier = Modifier.padding(8.dp)

@@ -7,10 +7,8 @@ import me.rerere.ai.util.fetchBody
 import me.rerere.ai.util.json
 import me.rerere.ai.util.mergeCustomHeaders
 import me.rerere.common.http.getByKey
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 private val TEMPLATE_VARIABLE = Regex("""\{\{\s*(\w+)\s*\}\}""")
 
@@ -22,7 +20,7 @@ fun renderQuotaTemplate(template: String, variable: (String) -> String?): String
     }
 
 /**
- * 执行 API Key 类提供商的自定义额度查询，没有开启时返回 null。
+ * 执行 API Key 类提供商的自定义额度查询（GET），没有开启时返回 null。
  *
  * 先放提供商级的自定义请求头，再写入查询配置的请求头，同名时以查询配置为准。
  */
@@ -31,7 +29,7 @@ internal suspend fun OkHttpClient.runQuotaQuery(
     nextApiKey: () -> String,
 ): ProviderQuota.Balance? = withContext(Dispatchers.IO) {
     val query = setting.quotaQuery.takeIf { it.enabled } ?: return@withContext null
-    // URL、请求头和请求体引用的是同一个 key
+    // URL 和请求头引用的是同一个 key
     val apiKey by lazy(nextApiKey)
     val render = { template: String ->
         renderQuotaTemplate(template) { name ->
@@ -50,13 +48,8 @@ internal suspend fun OkHttpClient.runQuotaQuery(
                 .filter { it.name.isNotBlank() }
                 .forEach { header(it.name.trim(), render(it.value)) }
         }
-        .apply {
-            when (query.method) {
-                QuotaQueryMethod.GET -> get()
-                QuotaQueryMethod.POST -> post(render(query.body).toRequestBody("application/json".toMediaType()))
-            }
-        }
+        .get()
         .build()
     val value = json.parseToJsonElement(fetchBody(request)).jsonObject.getByKey(query.resultPath)
-    ProviderQuota.Balance(value.toDoubleOrNull()?.let { "%.2f".format(it) } ?: value)
+    ProviderQuota.Balance(value.toFloatOrNull()?.let { "%.2f".format(it) } ?: value)
 }

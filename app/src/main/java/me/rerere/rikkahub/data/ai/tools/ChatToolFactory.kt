@@ -15,7 +15,6 @@ import me.rerere.rikkahub.data.model.Assistant
 import me.rerere.rikkahub.data.repository.ConversationRepository
 import me.rerere.rikkahub.data.repository.MemoryRepository
 import me.rerere.rikkahub.data.repository.WorkspaceRepository
-import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.data.repository.memoryId
 import me.rerere.rikkahub.data.skills.SkillManager
 import me.rerere.workspace.WorkspaceShellStatus
@@ -63,13 +62,11 @@ class ChatToolFactory(
     private val mcpManager: McpManager,
     private val skillManager: SkillManager,
     private val workspaceRepository: WorkspaceRepository,
-    private val backgroundShellManager: BackgroundShellManager,
 ) {
     suspend fun createTools(
         settings: Settings,
         assistant: Assistant,
         model: Model,
-        conversationId: Uuid,
         workspaceCwd: String? = null,
     ): List<Tool> {
         val boundWorkspace = assistant.workspaceId?.let { workspaceRepository.getById(it.toString()) }
@@ -87,7 +84,7 @@ class ChatToolFactory(
         val workspaceTools = if (usesDeviceTools) {
             emptyList()
         } else {
-            createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd, conversationId)
+            createWorkspaceToolsIfReady(assistant.workspaceId?.toString(), workspaceCwd)
         }
         // 设备级工具的默认工作目录：
         // - 绑定工具链工作区 → 该工作区的 files 目录，并跟随会话里选的子目录（workspaceCwd 存的是绝对路径）；
@@ -189,11 +186,7 @@ class ChatToolFactory(
         ) + output.filter { it !is UIMessagePart.Text }
     }
 
-    private suspend fun createWorkspaceToolsIfReady(
-        workspaceId: String?,
-        cwd: String?,
-        conversationId: Uuid,
-    ): List<Tool> {
+    private suspend fun createWorkspaceToolsIfReady(workspaceId: String?, cwd: String?): List<Tool> {
         if (workspaceId.isNullOrBlank()) return emptyList()
         val workspace = workspaceRepository.getById(workspaceId) ?: return emptyList()
         if (workspace.shellStatus != WorkspaceShellStatus.READY.name) {
@@ -203,6 +196,6 @@ class ChatToolFactory(
             )
             return emptyList()
         }
-        return createWorkspaceTools(workspaceId, workspaceRepository, cwd, conversationId, backgroundShellManager)
+        return createWorkspaceTools(workspaceId, workspaceRepository, cwd)
     }
 }

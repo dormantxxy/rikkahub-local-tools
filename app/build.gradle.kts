@@ -24,9 +24,9 @@ android {
         applicationId = "me.rerere.rikkahub"
         minSdk = 26
         targetSdk = 37
-        // 版本号 = 196 + run_number（workflow 传 RIKKAHUB_VERSION_BUMP）
-        versionCode = 196 + (System.getenv("RIKKAHUB_VERSION_BUMP")?.toIntOrNull() ?: 0)
-        versionName = "3.2.0"
+        // 版本号 = 194 + run_number（workflow 传 RIKKAHUB_VERSION_BUMP）
+        versionCode = 194 + (System.getenv("RIKKAHUB_VERSION_BUMP")?.toIntOrNull() ?: 0)
+        versionName = "3.1.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -319,12 +319,11 @@ dependencies {
     // image viewer
     implementation(libs.image.viewer)
 
-    // https://github.com/re-ovo/bettertext
-    implementation(platform(libs.bettertext.bom))
-    implementation(libs.bettertext.text)
-    implementation(libs.bettertext.markdown)
-    implementation(libs.bettertext.latex)
-    implementation(libs.bettertext.highlight)
+    // JLatexMath
+    // https://github.com/rikkahub/jlatexmath-android
+    implementation(libs.jlatexmath)
+    implementation(libs.jlatexmath.font.greek)
+    implementation(libs.jlatexmath.font.cyrillic)
 
     // mcp
     implementation(libs.modelcontextprotocol.kotlin.sdk)
