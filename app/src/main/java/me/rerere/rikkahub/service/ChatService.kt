@@ -154,7 +154,7 @@ class ChatService(
     )
 
     // 自动压缩已经为哪条回复尝试过；压缩失败也不会对同一条回复反复重试
-    private val autoCompressedReplyIds = java.util.concurrent.ConcurrentHashMap<Uuid, Uuid>()
+    private val autoCompressedReplyIds = java.util.concurrent.ConcurrentHashMap<Uuid, Uuid?>()
 
     // 错误状态
     private val _errors = MutableStateFlow<List<ChatError>>(emptyList())
