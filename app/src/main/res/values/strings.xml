@@ -1783,4 +1783,6 @@
   <string name="setting_display_page_auto_compress_threshold_title">Compression threshold</string>
   <string name="setting_display_page_auto_compress_threshold_desc">Compress when the last request uses this share of the model context window</string>
   <string name="error_title_auto_compress">Auto-compress failed</string>
+  <string name="setting_display_page_auto_compress_keep_recent_title">Keep recent messages</string>
+  <string name="setting_display_page_auto_compress_keep_recent_desc">Number of most recent messages kept unsummarized when auto-compressing; 0 compresses everything</string>
 </resources>

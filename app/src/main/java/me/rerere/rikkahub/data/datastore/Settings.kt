@@ -88,6 +88,8 @@ data class Settings(
     val enableAutoCompress: Boolean = false,
     /** 触发自动压缩的上下文占用比例（相对模型 contextLength） */
     val autoCompressThreshold: Float = 0.8f,
+    /** 自动压缩时保留最近的多少条消息不压缩（0 表示全部压缩） */
+    val autoCompressKeepRecent: Int = 0,
 ) {
     companion object {
         // 构造一个用于初始化的settings, 但它不能用于保存，防止使用初始值存储

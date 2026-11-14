@@ -110,6 +110,19 @@ fun SettingPreferencesGeneralPage(vm: SettingVM = koinViewModel()) {
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
+                        formItem(
+                            headlineContent = { Text(stringResource(R.string.setting_display_page_auto_compress_keep_recent_title)) },
+                            supportingContent = { Text(stringResource(R.string.setting_display_page_auto_compress_keep_recent_desc)) },
+                            trailingContent = { CardGroupValue("${settings.autoCompressKeepRecent}") },
+                        ) {
+                            Slider(
+                                value = settings.autoCompressKeepRecent.toFloat(),
+                                onValueChange = { vm.updateSettings { latest -> latest.copy(autoCompressKeepRecent = it.roundToInt()) } },
+                                valueRange = 0f..20f,
+                                steps = 19,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }

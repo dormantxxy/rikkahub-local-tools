@@ -1785,4 +1785,6 @@ mDNS 地址：使用 .local 主机名，同一网络中的其他设备可通过�
   <string name="setting_display_page_auto_compress_threshold_title">压缩触发比例</string>
   <string name="setting_display_page_auto_compress_threshold_desc">最后一次请求占用模型上下文达到该比例时触发压缩</string>
   <string name="error_title_auto_compress">自动压缩失败</string>
+  <string name="setting_display_page_auto_compress_keep_recent_title">保留最近消息数</string>
+  <string name="setting_display_page_auto_compress_keep_recent_desc">自动压缩时保留最近的多少条消息不压缩，0 表示全部压缩</string>
 </resources>

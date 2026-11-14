@@ -873,7 +873,7 @@ class ChatService(
             insertCompressionCheckpoint(
                 session = session,
                 additionalPrompt = "",
-                keepRecentMessages = 0,
+                keepRecentMessages = settings.autoCompressKeepRecent,
                 clearSuggestions = false,
             )
         } catch (e: Exception) {
@@ -978,6 +978,8 @@ class ChatService(
             insertCompressionCheckpoint(
                 session = session,
                 additionalPrompt = "",
+                // 中途压缩必须压到当前回复为止（检查点在它后面，之后新开一条回复），
+                // 保留最近 N 条会漏掉正在生成的回复，摘要和实际操作对不上，所以这里固定 0
                 keepRecentMessages = 0,
                 clearSuggestions = false,
                 midTurn = true,

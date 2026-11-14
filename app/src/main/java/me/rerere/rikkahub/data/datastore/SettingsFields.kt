@@ -107,6 +107,7 @@ internal val SETTINGS_FIELDS: List<SettingsField<*, *>> = with(SettingsStore) {
         plain(ENABLE_AUTO_TITLE, Settings::enableAutoTitle) { copy(enableAutoTitle = it) },
         plain(ENABLE_AUTO_COMPRESS, Settings::enableAutoCompress) { copy(enableAutoCompress = it) },
         plain(AUTO_COMPRESS_THRESHOLD, Settings::autoCompressThreshold) { copy(autoCompressThreshold = it) },
+        plain(AUTO_COMPRESS_KEEP_RECENT, Settings::autoCompressKeepRecent) { copy(autoCompressKeepRecent = it) },
         plain(TITLE_PROMPT, Settings::titlePrompt) { copy(titlePrompt = it) },
         plain(TRANSLATION_PROMPT, Settings::translatePrompt) { copy(translatePrompt = it) },
         plain(TRANSLATE_THINKING_BUDGET, Settings::translateThinkingBudget) { copy(translateThinkingBudget = it) },
