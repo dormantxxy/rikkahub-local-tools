@@ -123,11 +123,14 @@ class ChatRequestFactory(
     /**
      * 本轮交给 runAgent 的请求和钩子。[messages] 的最后一条是助手消息时从它继续，否则新建一条助手消息。
      * [processingStatus] 用来显示 OCR 这类输入转换的进度。
+     * [pauseAfterTools] 在一批工具执行完之后调用，返回 true 时这次运行以 Paused 结束，
+     * 调用方可以在这里压缩上下文后重开一轮。
      */
     fun createAgent(
         turn: ChatTurnContext,
         messages: List<UIMessage>,
         processingStatus: MutableStateFlow<String?>,
+        pauseAfterTools: (UIMessage) -> Boolean = { false },
     ): Pair<AgentRequest, AgentHooks> {
         val request = AgentRequest(
             provider = usageRecorder.wrap(
@@ -157,6 +160,8 @@ class ChatRequestFactory(
                         .visualTransforms(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                         .onGenerationFinish(outputTransformers, context, turn.model, turn.assistant, turn.settings)
                 }
+
+            override suspend fun shouldPause(message: UIMessage) = pauseAfterTools(message)
         }
         return request to hooks
     }
