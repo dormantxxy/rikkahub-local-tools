@@ -42,6 +42,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ContainedLoadingIndicator
@@ -59,8 +60,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -92,8 +95,12 @@ import androidx.compose.ui.zIndex
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import me.rerere.ai.ui.UIMessage
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.datastore.Settings
@@ -154,10 +161,10 @@ fun ChatList(
             ChatListPreview(
                 innerPadding = innerPadding,
                 conversation = conversation,
+                chatListState = state,
                 settings = settings,
                 hazeState = hazeState,
                 onJumpToMessage = onJumpToMessage,
-                animatedVisibilityScope = this@AnimatedContent,
             )
         } else {
             ChatListNormal(
@@ -622,76 +629,90 @@ private fun buildHighlightedText(
     }
 }
 
+// 搜索框高度，供列表顶部留白使用
+private val PreviewSearchBarHeight = 52.dp
+
+/**
+ * 单条预览项：把原始 index 和节点一起预计算出来。
+ * toText() 里含正则清洗，长对话下逐条算很慢，必须在后台算好再进 UI。
+ */
+private data class PreviewEntry(
+    val index: Int,
+    val node: MessageNode,
+    val text: String,
+)
+
 @Composable
 private fun ChatListPreview(
     innerPadding: PaddingValues,
     conversation: Conversation,
+    chatListState: LazyListState,
     settings: Settings,
     hazeState: HazeState,
-    animatedVisibilityScope: AnimatedVisibilityScope,
     onJumpToMessage: (Int) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val query = searchQuery.trim()
 
-    // 过滤消息，同时保留原始 index 避免后续 O(n) indexOf 查找
-    val filteredMessages = remember(conversation.messageNodes, searchQuery) {
-        if (searchQuery.isBlank()) {
-            conversation.messageNodes.mapIndexed { index, node -> index to node }
-        } else {
-            conversation.messageNodes.mapIndexed { index, node -> index to node }
-                .filter { (_, node) -> node.currentMessage.toText().contains(searchQuery, ignoreCase = true) }
-        }
+    val nodes by rememberUpdatedState(conversation.messageNodes)
+
+    // 卡顿主因：每条消息的 toText() 都在主线程重新跑。
+    // 改成后台一次性算好全文，conflate 掉生成中的中间态，只算最新一版。
+    val loadedEntries by produceState<List<PreviewEntry>?>(initialValue = null) {
+        snapshotFlow { nodes }
+            .conflate()
+            .collect { value = withContext(Dispatchers.Default) {
+                it.mapIndexed { index, node -> PreviewEntry(index, node, node.currentMessage.toText()) }
+            } }
+    }
+    val entries = loadedEntries.orEmpty()
+
+    // 过滤只做字符串匹配，成本低；没有搜索词时直接复用原列表
+    val filteredMessages = remember(entries, query) {
+        if (query.isEmpty()) entries
+        else entries.filter { it.text.contains(query, ignoreCase = true) }
     }
 
-    Column(
-        modifier = Modifier
-            .padding(top = innerPadding.calculateTopPadding())
-            .fillMaxSize()
-            .hazeSource(state = hazeState),
-    ) {
-        // 搜索框
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            placeholder = { Text(stringResource(R.string.history_page_search)) },
-            leadingIcon = {
-                Icon(
-                    imageVector = HugeIcons.Search01,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(
-                            imageVector = HugeIcons.Cancel01,
-                            contentDescription = "Clear",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            },
-            singleLine = true,
-            shape = CircleShape,
-            maxLines = 1,
-        )
+    // 搜索框固定在列表外，滚到中间改搜索词时结果要从头看
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState) {
+        snapshotFlow { query }.drop(1).collect { listState.scrollToItem(0) }
+    }
 
+    // 打开时定位到当前阅读位置
+    val loaded = loadedEntries != null
+    val currentIndex = remember { chatListState.firstVisibleItemIndex }
+    LaunchedEffect(loaded) {
+        if (!loaded) return@LaunchedEffect
+        val target = filteredMessages.indexOfFirst { it.index >= currentIndex }
+        if (target > 0) listState.scrollToItem(target)
+    }
+
+    // 修复搜索框不固定：搜索框浮在列表上方，列表顶部留白放进 contentPadding，
+    // 内容能滚到搜索框和透明标题栏下面并渐隐
+    val searchBarTop = innerPadding.calculateTopPadding() + 8.dp
+    val listTop = searchBarTop + PreviewSearchBarHeight + 12.dp
+
+    Box(modifier = Modifier.fillMaxSize()) {
         // 消息预览
         LazyColumn(
-            contentPadding = PaddingValues(16.dp) + PaddingValues(bottom = 32.dp + innerPadding.calculateBottomPadding()),
+            state = listState,
+            contentPadding = PaddingValues(horizontal = 16.dp) + PaddingValues(
+                top = listTop,
+                bottom = 32.dp + innerPadding.calculateBottomPadding(),
+            ),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+                .fillMaxSize()
+                .topFadingEdge(listTop)
+                .hazeSource(state = hazeState),
         ) {
             itemsIndexed(
                 items = filteredMessages,
-                key = { index, item -> item.second.id },
-            ) { _, (originalIndex, node) ->
+                key = { index, item -> item.node.id },
+            ) { _, entry ->
+                val originalIndex = entry.index
+                val node = entry.node
                 val message = node.currentMessage
                 val isUser = message.role == me.rerere.ai.core.MessageRole.USER
                 Column(
@@ -716,15 +737,15 @@ private fun ChatListPreview(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             val highlightColor = MaterialTheme.colorScheme.tertiaryContainer
-                            val highlightedText = remember(searchQuery, message) {
-                                val fullText = message.toText().trim().ifBlank { "[...]" }
+                            val highlightedText = remember(query, entry.text) {
+                                val fullText = entry.text.trim().ifBlank { "[...]" }
                                 val messageText = extractMatchingSnippet(
                                     text = fullText,
-                                    query = searchQuery
+                                    query = query
                                 )
                                 buildHighlightedText(
                                     text = messageText,
-                                    query = searchQuery,
+                                    query = query,
                                     highlightColor = highlightColor
                                 )
                             }
@@ -738,7 +759,64 @@ private fun ChatListPreview(
                     }
                 }
             }
+
+            // 搜索无结果时给个提示，而不是一片空白
+            if (loaded && filteredMessages.isEmpty()) {
+                item(key = "PreviewEmpty") {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 96.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Icon(
+                            imageVector = HugeIcons.Search01,
+                            contentDescription = null,
+                            modifier = Modifier.size(40.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            text = stringResource(R.string.history_page_search),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
         }
+
+        // 搜索框浮在列表上方固定不动
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = searchBarTop)
+                .height(PreviewSearchBarHeight),
+            placeholder = { Text(stringResource(R.string.history_page_search)) },
+            leadingIcon = {
+                Icon(
+                    imageVector = HugeIcons.Search01,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(
+                            imageVector = HugeIcons.Cancel01,
+                            contentDescription = "Clear",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = CircleShape,
+            maxLines = 1,
+        )
     }
 }
 
