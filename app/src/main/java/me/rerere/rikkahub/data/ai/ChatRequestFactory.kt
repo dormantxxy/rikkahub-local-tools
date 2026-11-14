@@ -2,12 +2,16 @@ package me.rerere.rikkahub.data.ai
 
 import android.content.Context
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import me.rerere.ai.agent.AgentHooks
 import me.rerere.ai.agent.AgentRequest
 import me.rerere.ai.agent.RetryPolicy
 import me.rerere.ai.agent.StepRequest
 import me.rerere.ai.agent.withRetry
+import me.rerere.ai.core.MessageRole
 import me.rerere.ai.core.ReasoningLevel
 import me.rerere.ai.core.Tool
 import me.rerere.ai.provider.Model
@@ -15,6 +19,7 @@ import me.rerere.ai.provider.ProviderManager
 import me.rerere.ai.provider.ProviderSetting
 import me.rerere.ai.provider.TextGenerationParams
 import me.rerere.ai.ui.UIMessage
+import me.rerere.ai.ui.UIMessagePart
 import me.rerere.ai.ui.limitContext
 import me.rerere.rikkahub.R
 import me.rerere.rikkahub.data.ai.prompts.buildMemoryPrompt
@@ -178,6 +183,23 @@ class ChatRequestFactory(
         messages: List<UIMessage>,
         compressPrompt: String,
     ): String {
+        // 组装请求要把全部历史过一遍输入转换器，长对话要算好几秒：不能放在调用方的主线程上，
+        // 这段纯计算里也检查不到取消。放进独立的协程，调用方取消时 await 立刻返回、不用等它算完。
+        val work = CoroutineScope(Dispatchers.IO).async {
+            requestCompressionSummary(turn, messages, compressPrompt)
+        }
+        return try {
+            work.await()
+        } finally {
+            work.cancel()
+        }
+    }
+
+    private suspend fun requestCompressionSummary(
+        turn: ChatTurnContext,
+        messages: List<UIMessage>,
+        compressPrompt: String,
+    ): String {
         val (requestMessages, params) = buildStep(turn, messages)
         // 压缩指令不经过输入转换器，模板转换器会把其中的花括号当成模板语法
         val result = withRetry(
@@ -232,7 +254,7 @@ class ChatRequestFactory(
             if (system.isNotBlank()) {
                 add(UIMessage.system(prompt = system).copy(isSynthetic = true))
             }
-            addAll(messages.limitContext(assistant.contextMessageLimit))
+            addAll(messages.limitContext(assistant.contextMessageLimit).withContinuationHint())
         }.transforms(
             transformers = inputTransformers,
             context = context,
@@ -306,3 +328,23 @@ internal fun backgroundTextGenerationParams(
 
 internal fun Settings.retryPolicy() =
     if (networkSetting.enableAutoRetry) RetryPolicy.NETWORK else RetryPolicy.NONE
+
+private const val CONTINUATION_HINT =
+    "The conversation history before this point was replaced by the summary above. " +
+        "If a task was in progress, continue it from where it left off: do not reply to the summary itself, " +
+        "and do not ask the user to repeat anything."
+
+/**
+ * 检查点后面不是用户消息时（一轮中途压缩，后面直接是助手的回复或什么都没有），告诉模型接着干活，
+ * 否则它会把摘要当成用户发来的内容去回应。
+ *
+ * 按"后面不是用户消息"而不是"在末尾"判断：这一轮之后的请求里检查点仍然带着这段话，前缀不变，不影响提示词缓存。
+ */
+internal fun List<UIMessage>.withContinuationHint(): List<UIMessage> {
+    val index = indexOfLast { it.isContextCheckpoint }
+    if (index < 0 || getOrNull(index + 1)?.role == MessageRole.USER) return this
+    val checkpoint = this[index]
+    return toMutableList().also {
+        it[index] = checkpoint.copy(parts = checkpoint.parts + UIMessagePart.Text(CONTINUATION_HINT))
+    }
+}

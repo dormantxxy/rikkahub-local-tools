@@ -869,14 +869,17 @@ class ChatService(
         autoCompressedReplyIds[session.id] = reply.id
         session.processingStatus.value = context.getString(R.string.chat_page_compressing)
         try {
-            compressConversation(
-                conversationId = session.id,
+            // 建议是这一轮刚生成的，自动压缩不清掉（与官方一致）
+            insertCompressionCheckpoint(
+                session = session,
                 additionalPrompt = "",
                 keepRecentMessages = 0,
-            ).onFailure { e ->
-                Log.w(TAG, "Auto compress failed", e)
-                addError(e, session.id, title = context.getString(R.string.error_title_auto_compress))
-            }
+                clearSuggestions = false,
+            )
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            Log.w(TAG, "Auto compress failed", e)
+            addError(e, session.id, title = context.getString(R.string.error_title_auto_compress))
         } finally {
             session.processingStatus.value = null
         }
