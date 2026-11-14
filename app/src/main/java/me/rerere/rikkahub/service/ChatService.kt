@@ -1391,9 +1391,10 @@ private fun replyTargetOf(conversation: Conversation, regenerateNodeId: Uuid?): 
     } else {
         conversation.currentMessages
     }
-    val nodeId = when {
+    val regenerateNode: Uuid? = regenerateNodeId
+    val nodeId: Uuid = when {
         history.lastOrNull()?.role == MessageRole.ASSISTANT -> nodes[history.lastIndex].id
-        regenerateNodeId != null -> regenerateNodeId
+        regenerateNode != null -> regenerateNode
         else -> Uuid.random()
     }
     return ReplyTarget(history, nodeId)
