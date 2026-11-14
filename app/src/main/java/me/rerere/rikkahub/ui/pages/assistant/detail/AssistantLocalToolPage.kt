@@ -63,6 +63,11 @@ import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
+import me.rerere.hugeicons.stroke.Tap01
+import me.rerere.rikkahub.Screen
+import me.rerere.rikkahub.data.datastore.SettingsStore
+import me.rerere.rikkahub.ui.context.LocalNavController
+import me.rerere.rikkahub.utils.openAccessibilitySettings
 
 @Composable
 fun AssistantLocalToolPage(id: String) {
@@ -106,6 +111,7 @@ private fun AssistantLocalToolContent(
 ) {
     val context = LocalContext.current
     val toaster = LocalToaster.current
+    val navController = LocalNavController.current
     val toolchainExecutor: ToolchainExecutor = koinInject()
     val shizukuGranted by me.rerere.rikkahub.data.localtools.ShizukuHelper.permissionGranted.collectAsStateWithLifecycle()
     // 只在进入本页面时检测一次权限（不是每次 AI 请求都检测）
@@ -186,6 +192,37 @@ private fun AssistantLocalToolContent(
             assistant.localTools - option
         }
         onUpdate(assistant.copy(localTools = newLocalTools))
+    }
+
+    fun CardGroupScope.toolItem(
+        option: LocalToolOption,
+        icon: ImageVector,
+        title: @Composable () -> Unit,
+        description: @Composable () -> Unit,
+    ) {
+        val checked = assistant.localTools.contains(option)
+        switchItem(
+            checked = checked,
+            onCheckedChange = { toggleLocalTool(option, it) },
+            enabled = true,
+            leadingContent = {
+                CardGroupIcon(
+                    icon = icon,
+                    containerColor = if (checked) {
+                        MaterialTheme.colorScheme.primaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.surfaceContainerHigh
+                    },
+                    contentColor = if (checked) {
+                        MaterialTheme.colorScheme.onPrimaryContainer
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            },
+            supportingContent = description,
+            headlineContent = title,
+        )
     }
 
     fun CardGroupScope.toolItem(

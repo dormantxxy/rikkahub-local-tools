@@ -102,6 +102,7 @@ val appModule = module {
             context = get(),
             appScope = get(),
             tracker = get(),
+            phoneUseManager = get(),
             lazyChatService = lazy { get() },
         )
     }
@@ -152,7 +153,8 @@ val appModule = module {
             metaGenerator = get(),
             mcpManager = get(),
             filesManager = get(),
-            folderRepository = get()
+            folderRepository = get(),
+            backgroundShellManager = get(),
         )
     }
 
