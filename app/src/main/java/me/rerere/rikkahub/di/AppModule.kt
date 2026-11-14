@@ -10,6 +10,7 @@ import me.rerere.rikkahub.data.localtools.ShellExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainExecutor
 import me.rerere.rikkahub.data.localtools.ToolchainInstallQueue
 import me.rerere.rikkahub.data.event.AppEventBus
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
 import me.rerere.rikkahub.service.BackgroundShellManager
 import me.rerere.rikkahub.service.ChatFloatingTracker
 import me.rerere.rikkahub.service.ChatNotificationManager
@@ -41,7 +42,11 @@ val appModule = module {
     single { ToolchainExecutor(get(), get(), get()) }
     single { ToolchainInstallQueue(get(), get(), get()) }
     single {
-        LocalTools(get(), get(), get(), get(), get(), get(), get())
+        LocalTools(get(), get(), get(), get(), get(), get(), get(), get(), get())
+    }
+
+    single {
+        PhoneUseManager()
     }
 
     single {

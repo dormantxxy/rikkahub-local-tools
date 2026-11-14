@@ -58,6 +58,8 @@ import me.rerere.rikkahub.ui.context.LocalToaster
 import me.rerere.rikkahub.ui.theme.CustomColors
 import me.rerere.rikkahub.utils.hasUsageStatsPermission
 import me.rerere.rikkahub.utils.openUsageAccessSettings
+import me.rerere.rikkahub.phoneuse.PhoneUseManager
+import me.rerere.rikkahub.phoneuse.isFloatingChatWindowOn
 import org.koin.androidx.compose.koinViewModel
 import org.koin.compose.koinInject
 import org.koin.core.parameter.parametersOf
@@ -129,6 +131,12 @@ private fun AssistantLocalToolContent(
             }
         }
     }
+    val phoneUseManager: PhoneUseManager = koinInject()
+    val phoneUseServiceOn = phoneUseManager.controller.collectAsStateWithLifecycle().value != null
+    val settingsStore: SettingsStore = koinInject()
+    val floatingWindowRequiredText =
+        stringResource(R.string.assistant_page_local_tools_phone_use_floating_window_required)
+    val enableServiceText = stringResource(R.string.assistant_page_local_tools_phone_use_enable_service)
     val permissionRequiredText =
         stringResource(R.string.assistant_page_local_tools_screen_time_permission_required)
 
@@ -151,6 +159,19 @@ private fun AssistantLocalToolContent(
     PermissionManager(permissionState = calendarPermissionState)
 
     fun toggleLocalTool(option: LocalToolOption, enabled: Boolean) {
+        // 没有悬浮窗就看不到 AI 在做什么、也不方便随时停下，先去把它打开，这次不开启工具
+        if (enabled && option == LocalToolOption.PhoneUse &&
+            !isFloatingChatWindowOn(context, settingsStore.settingsFlow.value)
+        ) {
+            toaster.show(message = floatingWindowRequiredText, type = ToastType.Warning)
+            navController.navigate(Screen.SettingPreferencesNotification)
+            return
+        }
+        // 无障碍服务还没开时带用户去系统设置，开关照常打开，开完服务就能用
+        if (enabled && option == LocalToolOption.PhoneUse && !phoneUseServiceOn) {
+            toaster.show(message = enableServiceText, type = ToastType.Warning)
+            context.openAccessibilitySettings()
+        }
         if (enabled && option == LocalToolOption.ScreenTime && !context.hasUsageStatsPermission()) {
             toaster.show(message = permissionRequiredText, type = ToastType.Warning)
             context.openUsageAccessSettings()
@@ -283,6 +304,26 @@ private fun AssistantLocalToolContent(
                 title = R.string.assistant_page_local_tools_chart_display_title,
                 description = R.string.assistant_page_local_tools_chart_display_desc,
             )
+            // 只有 github 渠道的 Android 11 及以上才有
+            if (PhoneUseManager.isSupported) {
+                toolItem(
+                    option = LocalToolOption.PhoneUse,
+                    icon = HugeIcons.Tap01,
+                    title = { Text(stringResource(R.string.assistant_page_local_tools_phone_use_title)) },
+                    description = {
+                        Column {
+                            Text(stringResource(R.string.assistant_page_local_tools_phone_use_desc))
+                            // 开了工具但服务没开时模型调用会直接报错，在这里说明原因
+                            if (LocalToolOption.PhoneUse in assistant.localTools && !phoneUseServiceOn) {
+                                Text(
+                                    text = stringResource(R.string.assistant_page_local_tools_phone_use_service_off),
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
             toolItemRaw(option = LocalToolOption.Shell, icon = HugeIcons.ComputerTerminal01, title = "设备命令", description = "在设备上执行系统命令")
             toolItemRaw(
                 option = LocalToolOption.Cli,
